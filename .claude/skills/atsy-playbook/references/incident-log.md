@@ -259,3 +259,12 @@ Atsy's own incidents start at #36.
     it. A security control that is switched off must be *off*, not
     half-configured — and any auth path that can refuse everyone needs a test
     that proves a real person still gets through. Both now have one.
+
+50. **The bot-check gating locked the E2E suite out, the same way it had locked
+    the live site out.** Making the submit button wait for a Turnstile token is
+    right, but the E2E environment had a real site key in `wrangler.jsonc`, so
+    the page tried to load a widget that a sandbox cannot reach and the button
+    waited forever. Seven sign-in tests failed in exactly the shape of incident
+    49. → E2E now blanks `TURNSTILE_SITE_KEY` as well as bypassing verification:
+    an environment with no shield must look like one to the client as well as
+    the server. Half-configured is the state that breaks things — see #49.

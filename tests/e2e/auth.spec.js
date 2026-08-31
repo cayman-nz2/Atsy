@@ -27,6 +27,14 @@ async function signIn(page, email) {
 }
 
 test.describe('sign in', () => {
+  test('with no bot check configured, the form is usable immediately', async ({ page }) => {
+    // E2E runs without a site key. The button must not sit disabled waiting
+    // for a widget that will never appear — that is the shape of the bug that
+    // locked everyone out of the live site.
+    await page.goto('/app');
+    await expect(page.getByRole('button', { name: 'Email me a code' })).toBeEnabled();
+  });
+
   test('the sixth digit signs you in on its own, and the session survives a reload', async ({ page }) => {
     const email = address('happy');
     await signIn(page, email);
