@@ -146,3 +146,42 @@ Atsy's own incidents start at #36.
     fixture corpus and say how. A search-result summary is a lead, not a
     citation: if the page cannot be opened and the methodology cannot be seen,
     the number does not get written down as fact anywhere.
+
+37. **Two components shared the class name `.mark`** (M0). The X-ray annotation
+    class collided with the nav wordmark, so every annotated element in the CV
+    silently inherited `display: inline-flex` and 20px bold display type. The
+    skills list became a flex row, its min-content width blew out the grid, and
+    the right-hand column was pushed 300px off-screen. → Component class names
+    are unique; a unit test now fails the build if any single-class selector
+    sets `display` in two separate rules. Symptoms of this class look like
+    layout bugs, not naming bugs — check for a duplicate selector first.
+
+38. **A screenshot review was performed against a stale build.** `wrangler dev`
+    snapshots the asset directory at startup and did not pick up a rebuilt
+    `dist/`, so the served page — and every screenshot taken of it — was markup
+    that no longer existed on disk. Exactly the shape of incident #30. → The
+    build now stamps `dist/build.json` with a fresh id, and the first E2E test
+    compares the served stamp with the local one and fails with "restart the
+    dev server". A review can no longer be looking at a ghost.
+
+39. **The site's own CSP blocked its own inline styles.** The X-ray annotation
+    boxes were positioned with `style="…"` attributes, which `style-src 'self'`
+    forbids: the browser dropped them, and the console filled with violations.
+    The same CSP later blocked Playwright's `addStyleTag` in the tour. → No
+    element carries a `style` attribute; positioning lives in CSS classes
+    (which also honours the rule that inline styles must never override a
+    component's contract, incident #31a). Test-time style injection goes
+    through the CSSOM (`sheet.insertRule`) on the page's own stylesheet.
+
+40. **Annotation pins were positioned in fixed pixels and stopped matching
+    their content at phone width**, then collided with the CV text once
+    re-anchored. → Annotations attach to the element they describe, never to
+    coordinates; the pins are real elements (not `::after`) so the
+    layout-overlap gate can measure them, and the gate's selector list now
+    includes them plus the CV's own labels.
+
+41. **A fixed-height stage clipped the machine view.** Both views were absolutely
+    positioned, so neither could size the container, and the extracted-text view
+    was cut off mid-content. → Stacked views share one CSS grid cell
+    (`grid-area: 1 / 1`), so the container is always as tall as its tallest
+    view and switching cannot resize it.

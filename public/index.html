@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en-NZ">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atsy — see your CV the way a hiring machine sees it</title>
+<meta name="description" content="Free CV scanner. Atsy shows you what an applicant tracking system actually reads from your PDF, scores what is fixable, and tells you exactly what to change.">
+<meta name="theme-color" content="#FAF8F4" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#101116" media="(prefers-color-scheme: dark)">
+<link rel="preload" href="/fonts/bricolage-grotesque-var.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/instrument-sans-var.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/atsy.css">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<nav class="nav">
+  <div class="wrap">
+    <a class="mark" href="/"><i></i>Atsy</a>
+    <div class="navactions">
+      <button class="themebtn" type="button" id="themebtn">Dark</button>
+    </div>
+  </div>
+</nav>
+
+<main id="main">
+  <header class="hero">
+    <div class="wrap">
+      <p class="eyebrow">Free CV scanner</p>
+      <h1>See your CV the way a <em>hiring machine</em> sees it.</h1>
+      <p class="lede">Upload a PDF and Atsy tells you whether an applicant tracking system can read
+        it, what it will get wrong, and exactly what to change — with the evidence, in under a
+        minute. No paywall, no credits, no ads.</p>
+      <div class="cta-row">
+        <a class="btn btn-primary" href="#demo">See what a parser reads</a>
+        <span class="cta-note">Uploads open in the next release.</span>
+      </div>
+    </div>
+  </header>
+
+  <section class="section" id="demo">
+    <div class="wrap">
+      <div class="shead">
+        <p class="eyebrow">The X-ray</p>
+        <h2>Your page, then the machine's version of it</h2>
+        <p>A CV is ink on paper. An applicant tracking system turns it into a data record, and the
+          order it reads in is stored inside the file — not the order your eye follows. Here is a
+          two-column CV, and the text a parser extracts from it.</p>
+      </div>
+
+      <div class="demo">
+        <div class="stage">
+          <div class="stagebar">
+            <span class="fname">sample-cv-two-column.pdf</span>
+            <div class="toggle" role="group" aria-label="Switch view">
+              <button type="button" id="btn-paper" aria-pressed="true">The page</button>
+              <button type="button" id="btn-machine" aria-pressed="false">What the machine reads</button>
+            </div>
+          </div>
+          <div class="views">
+            <div class="view" id="view-paper" aria-hidden="false">
+              <div class="cv">
+                <div class="cvhdr flag flag-critical">
+                  <b class="pin">1</b>
+                  <span>priya.raman@example.com &middot; +64 21 555 0134</span>
+                  <span>Auckland</span>
+                </div>
+                <h4>Priya Raman</h4>
+                <p class="role">Operations Manager</p>
+                <div class="cols flag flag-critical">
+                  <b class="pin">2</b>
+                  <div>
+                    <p class="lbl">Skills</p>
+                    <ul class="plain flag flag-major">
+                      <b class="pin">3</b>
+                      <li>Process design <span class="dots">&#9679;&#9679;&#9679;&#9679;&#9679;</span></li>
+                      <li>SQL <span class="dots">&#9679;&#9679;&#9679;&#9675;&#9675;</span></li>
+                      <li>Stakeholders <span class="dots">&#9679;&#9679;&#9679;&#9679;&#9675;</span></li>
+                    </ul>
+                    <p class="lbl">Education</p>
+                    <ul class="plain"><li>BCom, Univ. of Auckland</li><li>2014</li></ul>
+                    <p class="lbl">Languages</p>
+                    <ul class="plain"><li>English, Tamil</li></ul>
+                  </div>
+                  <div>
+                    <p class="lbl">My journey</p>
+                    <div class="job">
+                      <strong>Operations Manager</strong> &middot; Kauri Logistics<br>
+                      <span class="when flag flag-major"><b class="pin pin-inline">4</b>March 2023 &mdash; now</span>
+                      <ul>
+                        <li>Responsible for the warehouse team and daily dispatch</li>
+                        <li>Improved on-time delivery</li>
+                      </ul>
+                    </div>
+                    <div class="job">
+                      <strong>Team Lead</strong> &middot; Southbound Freight<br>
+                      <span class="when">06/2019 - 02/2023</span>
+                      <ul>
+                        <li>Managed rosters for 24 staff</li>
+                        <li>Managed supplier relationships</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="view is-out" id="view-machine" aria-hidden="true">
+<pre class="machine"><span class="m">// text extracted in the order the file stores it</span>
+Priya Raman
+Operations Manager
+<span class="bad">Skills My journey</span>
+<span class="bad">Process design Operations Manager &middot; Kauri Logistics</span>
+<span class="bad">SQL March 2023 &mdash; now</span>
+<span class="bad">Stakeholders Responsible for the warehouse team and daily</span>
+<span class="bad">Education dispatch</span>
+<span class="bad">BCom, Univ. of Auckland Improved on-time delivery</span>
+<span class="bad">2014 Team Lead &middot; Southbound Freight</span>
+<span class="bad">Languages 06/2019 - 02/2023</span>
+<span class="bad">English, Tamil Managed rosters for 24 staff</span>
+Managed supplier relationships
+
+<span class="m">// contact block: not found in body text</span>
+<span class="m">// section headings matched: 0 of 4</span>
+<span class="m">// skill ratings: 0 characters from 3 graphics</span>
+<span class="m">// roles with title + employer + dates: 0 of 2</span>
+</pre>
+            </div>
+          </div>
+        </div>
+
+        <div class="finds">
+          <article class="find">
+            <div class="top">
+              <h3>1 &middot; Contact details sit in the page header</h3>
+              <span class="chip crit">Critical</span>
+            </div>
+            <p>Header and footer bands are often skipped entirely, so an email and phone can vanish.
+              Move them into the body of the first page.</p>
+            <p class="ev">page 1 &middot; header band &middot; "priya.raman@example.com"</p>
+            <span class="pts">+1 point &middot; check B06</span>
+          </article>
+          <article class="find">
+            <div class="top">
+              <h3>2 &middot; The layout is two columns</h3>
+              <span class="chip crit">Critical</span>
+            </div>
+            <p>The file stores this text in an order that runs across the gutter, so extraction
+              interleaves the columns — that is the machine view, not a simulation. Use one column.</p>
+            <p class="ev">gutter at x=138pt &middot; both sides hold &gt;15% of the text</p>
+            <span class="pts">+6 points &middot; check P02</span>
+          </article>
+          <article class="find major">
+            <div class="top">
+              <h3>3 &middot; Skill ratings are pictures</h3>
+              <span class="chip maj">Major</span>
+            </div>
+            <p>Rating dots extract as nothing, so none of these skills is recorded — and reviewers
+              distrust self-rated bars. Write plain skill names instead.</p>
+            <p class="ev">3 glyph runs next to skill terms &middot; 0 characters extracted</p>
+            <span class="pts">+2 points &middot; check P10</span>
+          </article>
+          <article class="find major">
+            <div class="top">
+              <h3>4 &middot; Two different date formats</h3>
+              <span class="chip maj">Major</span>
+            </div>
+            <p>"March 2023 — now" and "06/2019 - 02/2023" belong to different families, so tenure is
+              computed wrong. Use one: <em>Mar 2023 – Present</em>.</p>
+            <p class="ev">page 1 &middot; "March 2023 &mdash; now" &middot; "06/2019 - 02/2023"</p>
+            <span class="pts">+4 points &middot; check C02</span>
+          </article>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="wrap">
+      <div class="shead">
+        <p class="eyebrow">What you get back</p>
+        <h2>A score you can argue with</h2>
+        <p>Every point Atsy takes off is attached to a finding, with the evidence from your file and
+          the fix written as an instruction. The rubric is published, and the score is deterministic:
+          the same CV always scores the same, because no language model touches the scoring.</p>
+      </div>
+      <div class="bento">
+        <div class="card">
+          <h3>What gets checked</h3>
+          <ul>
+            <li>Can the text be extracted at all</li>
+            <li>Reading order, columns, tables, headers</li>
+            <li>Contact block, dates, work history</li>
+            <li>Impact, action verbs, quantified results</li>
+            <li>Skills, and how findable they are</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>What you get</h3>
+          <ul>
+            <li>A score with five pillar breakdowns</li>
+            <li>Fixes ordered by the points they win back</li>
+            <li>The exact text a parser extracts</li>
+            <li>Per-engine parse risk, with reasons</li>
+            <li>Role fit against a job description</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>What happens to your file</h3>
+          <ul>
+            <li>Encrypted before it is stored</li>
+            <li>Deleted automatically within 24 hours</li>
+            <li>Never readable by anyone at Atsy</li>
+            <li>Never sent to an AI with your name on it</li>
+            <li>Delete everything in one click, any time</li>
+          </ul>
+        </div>
+      </div>
+      <div class="note mt-5">
+        <b>What Atsy is not.</b> No applicant tracking system publishes a candidate score, and every
+        one of them parses differently — so nobody, including this tool, can tell you "your Workday
+        score". Atsy reports how readable your file is and where it will break, using checks you can
+        read for yourself. Any number you see here is one Atsy worked out from your own file.
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <span>Atsy &middot; free CV scanner &middot; <span id="version">v0.1.0</span></span>
+    <span>Built on Cloudflare. No trackers, no ads, no third-party scripts.</span>
+  </div>
+</footer>
+
+<script src="/app.js"></script>
+</body>
+</html>

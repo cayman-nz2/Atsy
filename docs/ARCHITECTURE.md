@@ -268,7 +268,13 @@ Gates that must be green before a merge:
 4. **Layout-overlap gate** — fails the build if any two rendered surfaces
    intersect on any public page (Pricey incident #33).
 5. **Screenshot tour** — `npm run tour` (always rebuilds `dist` first) captures
-   every screen at 393×851 and 430×932, light and dark, for human review.
+   every screen at 393×851, 430×932 and 1280×900, light and dark, for human
+   review. Sticky bars are pinned to the top of the document for full-page
+   captures so a screenshot can never show an overlap that users do not see.
+6. **Stale-build gate** — the build stamps `dist/build.json`, and the first E2E
+   test fails if the server is serving a different build than the one on disk.
+   `wrangler dev` snapshots the asset directory at startup, so without this a
+   whole review can describe markup that no longer exists.
 
 Release discipline (owner's standing rules): feature branch → milestone-sized
 PR → self-merge on green → verify the deploy through the **GitHub Actions API**
