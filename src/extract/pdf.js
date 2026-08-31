@@ -160,6 +160,41 @@ export async function extractDocument(bytes, { maxPages = MAX_PAGES } = {}) {
     throw new UnreadablePdf('corrupt');
   }
 
+  try {
+    return await readDocument(document, OPS, byteLength, maxPages);
+  } finally {
+    // Hand back pdf.js's parsed pages, fonts and operator lists as soon as the
+    // plain model is built, rather than waiting for a collector to notice.
+    //
+    // Measured honestly: this does NOT reduce retained heap — 57 parses hold
+    // 13 MB with or without it, so the documents were already being collected
+    // and there was no leak. It is kept because a Worker isolate has a hard
+    // 128 MB ceiling and is killed rather than throttled when it is reached,
+    // so lowering the peak during a burst of scans is worth a cheap call. It
+    // is not a fix for anything currently known to be broken (incident 59).
+    await releaseDocument(document);
+  }
+}
+
+/**
+ * Give back everything pdf.js is holding. There is no single call for this in
+ * the build unpdf ships: `destroy()` lives on the loading task, not on the
+ * document proxy (the proxy only exposes `cleanup()`), so calling
+ * `document.destroy()` throws rather than freeing anything. Both are optional
+ * here because a future version may move them again, and failing to tidy up
+ * must never turn a successful scan into an error.
+ */
+async function releaseDocument(document) {
+  try {
+    if (typeof document.cleanup === 'function') await document.cleanup();
+  } catch { /* nothing to reclaim */ }
+  try {
+    const task = document.loadingTask;
+    if (task && typeof task.destroy === 'function') await task.destroy();
+  } catch { /* already torn down */ }
+}
+
+async function readDocument(document, OPS, byteLength, maxPages) {
   const metadata = await document.getMetadata().catch(() => ({ info: {} }));
   const info = metadata.info || {};
   if (info.IsXFAPresent) throw new UnreadablePdf('xfa_form');
@@ -205,6 +240,11 @@ export async function extractDocument(bytes, { maxPages = MAX_PAGES } = {}) {
     }
     invisibleTextRuns += scan.invisibleTextRuns;
     backgroundColourTextRuns += scan.backgroundColourTextRuns;
+
+    // The page's own caches go now: everything needed from it is already in
+    // plain objects, and holding ten pages at once is ten times the peak for
+    // no gain.
+    if (typeof page.cleanup === 'function') page.cleanup();
 
     pages.push({
       number,
