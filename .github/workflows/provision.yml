@@ -1,18 +1,27 @@
 # One-off provisioning of the Cloudflare resources Atsy needs, run by hand.
 #
-# It is separate from deploy.yml on purpose: creating infrastructure is not
-# something that should happen on every merge. Everything here is idempotent —
-# running it again reports what already exists instead of failing.
+# It is separate from deploy.yml on purpose: creating infrastructure and
+# setting secrets are not things that should happen on every merge. Everything
+# here is idempotent — a second run reports what already exists.
 #
-# After a run, copy the printed database_id into wrangler.jsonc.
+# Secrets created here go straight into the Worker with `wrangler secret put`
+# and are never printed. Only public values (the D1 database id, the Turnstile
+# site key) reach the log.
 name: Provision Cloudflare resources
 
 on:
   workflow_dispatch:
 
+env:
+  WORKER_NAME: atsy
+  ZONE_DOMAIN: atsy.vibecod3.app
+
 jobs:
   provision:
     runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
       - uses: actions/checkout@v4
 
@@ -20,29 +29,13 @@ jobs:
         with:
           node-version: 22
 
-      - name: Create the D1 database and the R2 bucket
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - name: D1 database
         run: |
-          set -o pipefail
-
-          echo "::group::D1 database atsy-db"
+          echo "::group::create atsy-db"
           npx wrangler@4 d1 create atsy-db 2>&1 | tee d1.log || \
-            echo "d1 create reported an error (it already exists, or the token lacks D1 edit)"
+            echo "already exists, or the token lacks D1 edit"
           echo "::endgroup::"
-
-          echo "::group::R2 bucket atsy-cv"
-          npx wrangler@4 r2 bucket create atsy-cv 2>&1 | tee r2.log || \
-            echo "r2 create reported an error (it already exists, or the token lacks R2 edit)"
-          echo "::endgroup::"
-
-          echo "::group::Existing D1 databases"
-          npx wrangler@4 d1 list --json 2>/dev/null | tee d1-list.json || true
-          echo "::endgroup::"
-
-          # The id is what wrangler.jsonc needs. Print it on its own line so it
-          # can be read straight out of the run log.
+          npx wrangler@4 d1 list --json 2>/dev/null > d1-list.json || true
           id=$(node -e "
             const fs = require('fs');
             let id = '';
@@ -51,15 +44,76 @@ jobs:
               const db = list.find((entry) => entry.name === 'atsy-db');
               if (db) id = db.uuid || db.database_id || '';
             } catch {}
-            if (!id) {
-              const log = fs.existsSync('d1.log') ? fs.readFileSync('d1.log', 'utf8') : '';
-              const match = log.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/);
-              id = match ? match[0] : '';
-            }
             console.log(id);
           ")
           echo "ATSY_DB_DATABASE_ID=${id}"
-          if [ -z "$id" ]; then
-            echo "::error::could not determine the atsy-db database id — check the log above"
-            exit 1
+
+      - name: R2 bucket
+        run: |
+          if npx wrangler@4 r2 bucket create atsy-cv 2>&1 | tee r2.log; then
+            echo "atsy-cv is ready"
+          elif grep -q "10042" r2.log; then
+            echo "::warning::R2 is not enabled on this account. Enable it once in the Cloudflare dashboard (R2 -> Enable; the 10 GB free tier covers Atsy), then run this workflow again."
+          else
+            echo "atsy-cv already exists, or the token lacks R2 edit"
+          fi
+
+      # Turnstile site keys are public; the matching secret must never be. It
+      # goes straight into the Worker without passing through the log or a
+      # GitHub secret.
+      - name: Turnstile widget
+        run: |
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/challenges/widgets"
+          existing=$(curl -sS -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" "$api" || echo '{}')
+          sitekey=$(node -e "
+            let data = {};
+            try { data = JSON.parse(process.argv[1]); } catch {}
+            const widget = (data.result || []).find((w) => (w.domains || []).includes(process.argv[2]));
+            console.log(widget ? widget.sitekey : '');
+          " "$existing" "${ZONE_DOMAIN}")
+          secret=""
+
+          if [ -z "$sitekey" ]; then
+            created=$(curl -sS -X POST -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+              -H "Content-Type: application/json" \
+              -d "{\"name\":\"atsy\",\"domains\":[\"${ZONE_DOMAIN}\"],\"mode\":\"managed\"}" "$api" || echo '{}')
+            sitekey=$(node -e "
+              let data = {};
+              try { data = JSON.parse(process.argv[1]); } catch {}
+              if (!data.success) console.error('Turnstile API: ' + JSON.stringify(data.errors || data));
+              console.log(data.success ? data.result.sitekey : '');
+            " "$created")
+            secret=$(node -e "
+              let data = {};
+              try { data = JSON.parse(process.argv[1]); } catch {}
+              console.log(data.success ? data.result.secret : '');
+            " "$created")
+          else
+            echo "a widget for ${ZONE_DOMAIN} already exists; leaving its secret alone"
+          fi
+
+          if [ -n "$sitekey" ]; then
+            echo "TURNSTILE_SITE_KEY=${sitekey}"
+            echo "::notice::Put this site key in wrangler.jsonc vars: ${sitekey}"
+          else
+            echo "::warning::Could not create a Turnstile widget — the API token most likely lacks Turnstile:Edit. Create it in the dashboard instead, and add the secret as the TURNSTILE_SECRET_KEY GitHub secret."
+          fi
+
+          if [ -n "$secret" ]; then
+            printf '%s' "$secret" | npx wrangler@4 secret put TURNSTILE_SECRET_KEY --name "${WORKER_NAME}" \
+              && echo "TURNSTILE_SECRET_KEY set on the Worker" \
+              || echo "::warning::could not set TURNSTILE_SECRET_KEY — has the Worker been deployed yet?"
+          fi
+
+      # The salt only has to be secret and stable, so generating it here means
+      # it never has to travel through a person.
+      - name: IP hash salt
+        run: |
+          if npx wrangler@4 secret list --name "${WORKER_NAME}" 2>/dev/null | grep -q IP_HASH_SALT; then
+            echo "IP_HASH_SALT is already set — leaving it alone, since changing it resets every rate-limit window"
+          else
+            node -e "process.stdout.write(require('crypto').randomBytes(32).toString('base64'))" \
+              | npx wrangler@4 secret put IP_HASH_SALT --name "${WORKER_NAME}" \
+              && echo "IP_HASH_SALT generated and set on the Worker" \
+              || echo "::warning::could not set IP_HASH_SALT — has the Worker been deployed yet?"
           fi
