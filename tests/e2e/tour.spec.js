@@ -4,6 +4,7 @@
 // layout, both themes, and the owner's device size.
 import { test, expect } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
+import { fixture } from '../fixtures/cvs.js';
 
 // A full-page capture repaints sticky bars over whatever is scrolled under
 // them, which is a rendering lie: reviewers cannot tell it from a real overlap
@@ -73,6 +74,18 @@ test.describe('screenshot tour', () => {
       await page.getByLabel('Six-digit code').fill(code);
       await expect(page.getByRole('heading', { name: 'You are signed in' })).toBeVisible();
       await page.screenshot({ path: `screenshots/account-phone-430-${theme}.png`, fullPage: true });
+
+      // The result card, with a real scan behind it. A screen the reviewer
+      // cannot see is a screen nobody has checked.
+      await page.setInputFiles('#file', {
+        name: 'priya-raman-cv.pdf',
+        mimeType: 'application/pdf',
+        buffer: Buffer.from(fixture('twoColumn')),
+      });
+      await page.getByRole('button', { name: 'Scan this CV' }).click();
+      await expect(page.locator('#card-read')).toBeVisible();
+      await page.evaluate(() => document.fonts.ready);
+      await page.screenshot({ path: `screenshots/scan-result-phone-430-${theme}.png`, fullPage: true });
     });
   }
 

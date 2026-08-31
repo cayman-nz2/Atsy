@@ -60,19 +60,23 @@
         <li><strong>A salted hash of your IP address</strong> — never the address itself — purely to
           stop someone flooding the sign-in form.</li>
       </ul>
-      <p class="fineprint">Scanning is not live yet, so there is no CV, no file and no scan history
-        in the system at all.</p>
+      <p class="fineprint">Scoring is not live yet, so no scan carries a score. Nothing else on
+        this page is aspirational — it describes what happens to a CV you upload today.</p>
     </div>
 
     <div class="card">
-      <h2 class="cardtitle">When scanning arrives, this is the deal</h2>
+      <h2 class="cardtitle">Your CV, once you upload one</h2>
       <ul class="tightlist">
         <li>Your file is <strong>encrypted before it is stored</strong>, with a key held by the
-          application, not by the storage.</li>
-        <li>The file is <strong>deleted automatically within 24 hours</strong>; the findings from it
-          go after 30 days.</li>
-        <li>The text pulled out of your CV is <strong>never saved</strong> — only the findings, with
-          short quotes so you can see what a fix refers to.</li>
+          application, not by the storage. A leaked storage bucket yields ciphertext.</li>
+        <li>The file is <strong>deleted automatically within 24 hours</strong>; what Atsy read about
+          its layout goes after 30 days. Both happen on a schedule, not on request.</li>
+        <li>The text pulled out of your CV is <strong>never saved</strong> — not your name, your
+          email, your employers or your bullet points. What is kept is facts <em>about</em> the
+          document: how many columns, which sections were found, whether the dates line up. You see
+          the text itself in your browser, once, and it is not written down anywhere.</li>
+        <li>Later, when scoring lands, findings will be kept with <strong>short quotes</strong>
+          capped at 120 characters, so a fix can point at what it refers to.</li>
         <li><strong>Nobody at Atsy can read your CV.</strong> There is no admin screen for it; the
           only view is yours, and a test in the build fails if that ever changes.</li>
         <li>If you ask for AI-written suggestions, your name, email, phone, links and employers are
@@ -86,7 +90,7 @@
       <h2 class="cardtitle">What Atsy never does</h2>
       <ul class="tightlist">
         <li>No advertising, no analytics, no tracking pixels, no third-party scripts — the only
-          outside code on the whole site is Cloudflare's bot check on the sign-in form.</li>
+          outside code on the whole site is Cloudflare's bot check on the sign-in and upload forms.</li>
         <li>Your CV is never sold, shared, published, or used to train anything.</li>
         <li>No recruiter, employer or agency has access to any of this.</li>
         <li>No email from us except your sign-in codes and answers to feedback you send.</li>
@@ -111,7 +115,7 @@
 
 <footer class="foot">
   <div class="wrap">
-    <span>Atsy &middot; free CV scanner &middot; <span id="version">v0.5.0</span></span>
+    <span>Atsy &middot; free CV scanner &middot; <span id="version">v0.6.0</span></span>
     <nav class="footnav" aria-label="More from Atsy">
       <a href="/">Home</a>
       <a href="/about">How it works</a>

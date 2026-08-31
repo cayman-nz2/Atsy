@@ -189,12 +189,19 @@ export function extractEntities(document, sections) {
   });
 
   // Gaps between consecutive roles, measured from the older role's end to the
-  // newer one's start. Only computable when both ends are dated.
+  // newer one's start. Only the older role's end date and the newer role's
+  // start date are needed.
+  //
+  // This used to skip the pair whenever the newer role was open-ended, which
+  // silently disabled the check on almost every real CV: the most recent role
+  // is normally "Present", and the gap just before the current job is exactly
+  // the one a recruiter asks about. Whether the newer role has ended has no
+  // bearing on when it started.
   const gaps = [];
   for (let index = 1; index < roles.length; index += 1) {
     const newer = roles[index - 1];
     const older = roles[index];
-    if (!older.range.to || newer.range.open) continue;
+    if (!older.range.to || !newer.range.from) continue;
     const months = monthsBetween(older.range.to, newer.range.from);
     if (months >= 6) gaps.push({ months, after: older.evidence, before: newer.evidence });
   }

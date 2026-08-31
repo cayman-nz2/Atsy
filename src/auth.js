@@ -10,6 +10,8 @@ import {
   getCookie, sessionCookie, validEmail, readJson,
 } from './util.js';
 import { sendEmail, notifyOwner, maskCode } from './notify.js';
+import { verifyTurnstile } from './turnstile.js';
+import { deleteAllScansFor } from './scan.js';
 
 const OTP_TTL_SEC = 10 * 60;
 const OTP_MAX_ATTEMPTS = 5;
@@ -20,38 +22,6 @@ const OTP_MAX_PER_EMAIL_HOUR = 5;
 const OTP_MAX_PER_IP_HOUR_DEFAULT = 20;
 const SESSION_TTL_SEC = 90 * 24 * 3600;
 const SESSION_REFRESH_UNDER_SEC = 60 * 24 * 3600;
-
-export async function verifyTurnstile(env, token, ip) {
-  // Local dev and E2E only, passed with `wrangler dev --var`. It must never
-  // appear in wrangler.jsonc.
-  if (env.TURNSTILE_BYPASS === '1') return true;
-
-  if (!env.TURNSTILE_SECRET_KEY) {
-    // No secret means the bot shield is knowingly off. Calling siteverify with
-    // Cloudflare's always-pass test secret looks harmless but is not: an empty
-    // token still comes back `missing-input-response`, so an unconfigured
-    // shield blocked every sign-in — failing closed for a reason that has
-    // nothing to do with bots. Skip the check and say so.
-    console.log('WARNING: TURNSTILE_SECRET_KEY unset — the bot shield is off; rate limits still apply');
-    return true;
-  }
-
-  const secret = env.TURNSTILE_SECRET_KEY;
-  const body = new FormData();
-  body.set('secret', secret);
-  body.set('response', token || '');
-  if (ip) body.set('remoteip', ip);
-  try {
-    const response = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
-      method: 'POST',
-      body,
-    });
-    const data = await response.json();
-    return !!data.success;
-  } catch {
-    return false;
-  }
-}
 
 const signInEmail = (code) => [
   'Here is your Atsy sign-in code:',
@@ -204,14 +174,18 @@ export async function logout(request, env) {
 }
 
 // Irreversible, and it says so in the interface before it is called. Every
-// table that will ever hold this user's data must be deleted here — later
-// milestones add scans, findings, matches and the stored file.
+// table that will ever hold this user's data must be deleted here.
+//
+// The scans and their ciphertext go first. A user row deleted while the stored
+// CVs survived would be the worst kind of privacy bug: the one that looks
+// fixed. Later milestones add matches and feedback to the same cascade.
 export async function deleteAccount(request, env, user) {
+  const scans = await deleteAllScansFor(env, user.id);
   await env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(user.id).run();
   await env.DB.prepare('DELETE FROM otp_codes WHERE email = ?').bind(user.email).run();
   const removed = await env.DB.prepare('DELETE FROM users WHERE id = ?').bind(user.id).run();
   if (!removed.meta.changes) return err('not_found', 404);
-  return json({ ok: true, deleted: { account: 1 } }, 200, {
+  return json({ ok: true, deleted: { account: 1, scans } }, 200, {
     'set-cookie': sessionCookie('', 0),
   });
 }

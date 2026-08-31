@@ -5,13 +5,21 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { VERSION } from '../src/version.js';
 import { sendEmail, maskCode } from '../src/notify.js';
-import { verifyTurnstile } from '../src/auth.js';
+import { verifyTurnstile } from '../src/turnstile.js';
+import { deleteAccount } from '../src/auth.js';
 import { extractDocument, UnreadablePdf } from '../src/extract/pdf.js';
 import { analyseLayout } from '../src/extract/layout.js';
 import { detectSections } from '../src/extract/sections.js';
 import { canonicalSection } from '../src/lexicons/sections.js';
 import { extractEntities, parseDate, dateFamily, findDateRanges } from '../src/extract/entities.js';
 import { fixture, fixtureNames } from './fixtures/cvs.js';
+import { testEnv, testUser, uploadRequest } from './fixtures/bindings.js';
+import {
+  buildModel, modelSummary, safeFilename, newScanId, r2KeyFor, failureMessage,
+  createScan, listScans, getScan, getScanFile, deleteScan, deleteAllScansFor,
+  fileRetentionSeconds, recordRetentionSeconds, MAX_UPLOAD_BYTES,
+} from '../src/scan.js';
+import { runRetention, purgeFiles, purgeRecords, purgeEphemera } from '../src/retention.js';
 import { RELEASES } from '../src/report.js';
 import {
   json, err, escapeHtml, nowSec, SECURITY_HEADERS,
@@ -339,6 +347,12 @@ await test('wrangler.jsonc never carries the dev escape hatches or a secret', ()
   const varsBlock = config.slice(config.indexOf('"vars"'));
   assert.ok(!varsBlock.includes('"OTP_ECHO"'), 'OTP_ECHO must only be passed via wrangler dev --var');
   assert.ok(!varsBlock.includes('"TURNSTILE_BYPASS"'), 'TURNSTILE_BYPASS must only be passed via wrangler dev --var');
+  // Key material is a Worker secret. A key in a var is a key in the git
+  // history, and the development key is worse than none: it is public.
+  assert.ok(!varsBlock.includes('"CV_MASTER_KEY"'), 'CV_MASTER_KEY must be a Worker secret, never a var');
+  assert.ok(!varsBlock.includes('"IP_HASH_SALT"'), 'IP_HASH_SALT must be a Worker secret, never a var');
+  assert.ok(!varsBlock.includes('"TURNSTILE_SECRET_KEY"'), 'the Turnstile secret must be a Worker secret, never a var');
+  assert.ok(!read('wrangler.jsonc').includes('QUFB'), 'the development CV key leaked into wrangler.jsonc');
   assert.ok(!varsBlock.includes('"OTP_MAX_PER_IP_HOUR"'), 'the per-IP cap must never be raised in production config');
   for (const secret of ['TURNSTILE_SECRET_KEY', 'CV_MASTER_KEY', 'IP_HASH_SALT', 'CLOUDFLARE_API_TOKEN']) {
     assert.ok(!varsBlock.includes(`"${secret}"`), `${secret} is a Worker secret, never a var`);
@@ -354,20 +368,52 @@ await test('every migration is applied in order and never edited in place', () =
   });
 });
 
-await test('every table holding user data is deleted when an account is deleted', () => {
-  // A delete that misses a table leaves personal data behind after someone has
-  // been told it is gone. Every CREATE TABLE must be covered by deleteAccount.
+const schemaTables = () => {
   const schema = readdirSync('migrations')
     .filter((f) => f.endsWith('.sql'))
     .map((f) => read(join('migrations', f)))
     .join('\n');
-  const tables = [...schema.matchAll(/CREATE TABLE (\w+)/g)].map((match) => match[1]);
-  const auth = read('src/auth.js');
-  const deleteBlock = auth.slice(auth.indexOf('export async function deleteAccount'));
-  for (const table of tables) {
-    assert.ok(deleteBlock.includes(`FROM ${table}`),
-      `deleteAccount does not remove rows from ${table}`);
+  return [...schema.matchAll(/CREATE TABLE (\w+)/g)].map((match) => match[1]);
+};
+
+await test('every table in the schema is named somewhere in the delete cascade', () => {
+  // A structural guard, so a table added by a future migration that nobody
+  // wired into the cascade fails here even if no test fixture happens to put
+  // a row in it. The cascade spans auth.js and the scan half it delegates to.
+  const cascade = `${read('src/auth.js')}\n${read('src/scan.js')}`;
+  for (const table of schemaTables()) {
+    assert.ok(cascade.includes(`FROM ${table}`),
+      `nothing in the delete cascade removes rows from ${table}`);
   }
+});
+
+await test('deleting an account really empties every table, not just the ones we remembered', async () => {
+  // The behavioural half: a row in every table, then one delete, then every
+  // table must be empty. Being told your data is gone while a row survives is
+  // the worst kind of privacy bug, so this asserts the outcome rather than
+  // the presence of a statement.
+  const env = testEnv();
+  const user = testUser(env);
+  const { scan } = await (await createScan(uploadRequest(fixture('clean')), env, user)).json();
+  env.DB.prepare('INSERT INTO scan_checks (scan_id, check_id) VALUES (?, ?)').bind(scan.id, 'P01').run();
+  env.DB.prepare('INSERT INTO otp_codes (email, code_hash, expires_at, created_at) VALUES (?, ?, ?, ?)')
+    .bind(user.email, 'hash', nowSec() + 600, nowSec()).run();
+  env.DB.prepare('INSERT INTO sessions (token_hash, user_id, created_at, expires_at, last_used) VALUES (?, ?, ?, ?, ?)')
+    .bind('token-hash', user.id, nowSec(), nowSec() + 600, nowSec()).run();
+  await getScanFile(new Request('https://atsy.test/'), env, user, scan.id);
+
+  for (const table of schemaTables()) {
+    const { count } = env.DB.prepare(`SELECT COUNT(*) AS count FROM ${table}`).first();
+    assert.ok(count > 0, `the test did not put a row in ${table}, so it proves nothing about it`);
+  }
+
+  const response = await deleteAccount(new Request('https://atsy.test/'), env, user);
+  assert.equal(response.status, 200);
+  for (const table of schemaTables()) {
+    const { count } = env.DB.prepare(`SELECT COUNT(*) AS count FROM ${table}`).first();
+    assert.equal(count, 0, `${table} still holds rows after the account was deleted`);
+  }
+  assert.equal(env.CV.objects.size, 0, 'the stored CV outlived the account');
 });
 
 await test('the entry module exports only the fetch handler', () => {
@@ -763,6 +809,478 @@ await test('a two-column layout costs the CV its sections and its roles', async 
   const entities = await entitiesOf('twoColumn');
   assert.ok(sections.missingRequired.includes('experience'));
   assert.equal(entities.roles.length, 0);
+});
+
+/* ---------------- the scan pipeline ---------------- */
+
+const scanOf = async (env, user, name, options) =>
+  (await createScan(uploadRequest(fixture(name), options), env, user)).json();
+
+await test('the whole corpus parses to a document model under plain node', async () => {
+  // M2's acceptance criterion. No Cloudflare runtime, no network: if this
+  // passes, every scoring check in M3 can be developed against real documents.
+  assert.equal(fixtureNames.length, 20, 'the corpus is 20 CVs');
+  for (const name of fixtureNames) {
+    if (name === 'imageOnly') continue; // no text layer, asserted separately
+    const model = await buildModel(fixture(name));
+    assert.ok(model.document.pageCount >= 1, `${name} has no pages`);
+    assert.ok(model.document.hasTextLayer, `${name} lost its text layer`);
+    assert.ok(model.layout.pages.length >= 1, `${name} produced no layout`);
+    assert.ok(Number.isFinite(model.sections.bodySize), `${name} has no body size`);
+    assert.ok(Array.isArray(model.entities.bullets), `${name} produced no bullet list`);
+  }
+});
+
+await test('the same PDF produces a byte-identical model summary twice', async () => {
+  // The non-negotiable: no model in the scoring path, so no run-to-run drift.
+  const first = modelSummary(await buildModel(fixture('clean')));
+  const second = modelSummary(await buildModel(fixture('clean')));
+  assert.equal(JSON.stringify(first), JSON.stringify(second));
+});
+
+await test('the stored summary carries no CV text', async () => {
+  // The promise on /privacy, enforced rather than asserted. Every identity
+  // string in the control fixture must be absent from what reaches D1.
+  const model = await buildModel(fixture('clean'));
+  const stored = JSON.stringify(modelSummary(model));
+  const identity = [
+    'Priya Raman', 'priya.raman@example.com', '555 0134', 'linkedin.com/in/priyaraman',
+    'Kauri Logistics', 'Southbound Freight', 'University of Auckland',
+    'Lifted on-time delivery', 'Power BI',
+  ];
+  for (const secret of identity) {
+    assert.ok(!stored.includes(secret), `the stored summary leaked "${secret}"`);
+  }
+  // And the facts that replace it are really there.
+  const summary = modelSummary(model);
+  assert.equal(summary.entities.hasEmail, true);
+  assert.equal(summary.entities.hasPhone, true);
+  assert.ok(summary.entities.roleCount >= 2);
+  assert.ok(summary.sections.found.includes('experience'));
+});
+
+await test('a filename cannot carry a path, a control character or a quote', () => {
+  assert.equal(safeFilename('../../etc/passwd'), 'passwd');
+  assert.equal(safeFilename('C:\\Users\\me\\cv.pdf'), 'cv.pdf');
+  assert.equal(safeFilename('cv\u0000\u000a.pdf'), 'cv.pdf');
+  assert.equal(safeFilename('a"b.pdf'), 'ab.pdf');
+  assert.equal(safeFilename(''), 'cv.pdf');
+  assert.equal(safeFilename(null), 'cv.pdf');
+  assert.equal(safeFilename(`${'x'.repeat(400)}.pdf`).length, 120);
+});
+
+await test('scan ids are 128-bit hex and do not repeat', () => {
+  const ids = new Set();
+  for (let i = 0; i < 200; i += 1) {
+    const id = newScanId();
+    assert.match(id, /^[0-9a-f]{32}$/);
+    ids.add(id);
+  }
+  assert.equal(ids.size, 200);
+});
+
+await test('an upload is stored encrypted, and the ciphertext is not the PDF', async () => {
+  const env = testEnv();
+  const user = testUser(env);
+  const body = await scanOf(env, user, 'clean');
+  assert.equal(body.scan.status, 'complete');
+  assert.equal(body.scan.file_available, true);
+
+  const stored = env.CV.objects.get(r2KeyFor(body.scan.id));
+  assert.ok(stored, 'nothing reached the bucket');
+  const plain = fixture('clean');
+  assert.notEqual(stored.length, plain.length, 'the stored object is the same size as the PDF');
+  assert.notEqual(
+    Buffer.from(stored.slice(0, 5)).toString('latin1'), '%PDF-',
+    'the stored object still begins with a PDF header',
+  );
+});
+
+await test('the model reaches the reader but only the summary reaches the database', async () => {
+  const env = testEnv();
+  const user = testUser(env);
+  const body = await scanOf(env, user, 'clean');
+  // The browser that uploaded the file sees what was read out of it.
+  assert.equal(body.scan.identity.email, 'priya.raman@example.com');
+  assert.ok(body.scan.identity.name);
+
+  const row = env.DB.prepare('SELECT model_json FROM scans WHERE id = ?').bind(body.scan.id).first();
+  assert.ok(!row.model_json.includes('priya.raman@example.com'));
+  assert.ok(!row.model_json.includes('Priya Raman'));
+
+  // And re-opening the scan later cannot show it, because it was never kept.
+  const reopened = await (await getScan(new Request('https://atsy.test/'), env, user, body.scan.id)).json();
+  assert.equal(reopened.scan.identity, null);
+  assert.equal(reopened.scan.model.entities.hasEmail, true);
+});
+
+await test('a scan is unscored until the scoring engine lands, and says so', async () => {
+  // Better an honest gap than a fabricated number: the product rule is that
+  // Atsy never shows a figure it did not compute.
+  const env = testEnv();
+  const user = testUser(env);
+  const body = await scanOf(env, user, 'clean');
+  assert.equal(body.scan.scored, false);
+  assert.equal(body.scan.score, null);
+});
+
+await test('a picture of a CV is refused with an explanation, not scored zero', async () => {
+  const env = testEnv();
+  const user = testUser(env);
+  const response = await createScan(uploadRequest(fixture('imageOnly')), env, user);
+  assert.equal(response.status, 422);
+  const body = await response.json();
+  assert.equal(body.reason, 'no_text');
+  assert.match(body.message, /picture of a CV/);
+
+  const row = env.DB.prepare('SELECT status, failure_reason, r2_key FROM scans').first();
+  assert.equal(row.status, 'failed');
+  assert.equal(row.failure_reason, 'no_text');
+  // A file that cannot be scanned has no second use: it goes now, not in 24h.
+  assert.equal(row.r2_key, null);
+  assert.equal(env.CV.objects.size, 0);
+});
+
+await test('a file that is not a PDF is refused before anything is stored', async () => {
+  const env = testEnv();
+  const user = testUser(env);
+  const response = await createScan(
+    uploadRequest(new TextEncoder().encode('this is a Word document, really')), env, user);
+  assert.equal(response.status, 422);
+  assert.equal((await response.json()).reason, 'not_pdf');
+  assert.equal(env.CV.objects.size, 0);
+});
+
+await test('every failure reason has a message a person can act on', () => {
+  for (const reason of ['not_pdf', 'encrypted', 'xfa_form', 'corrupt', 'too_complex', 'no_text', 'storage']) {
+    const message = failureMessage(reason);
+    assert.ok(message.length > 40, `${reason} has no real explanation`);
+    assert.ok(!/error|failed|invalid/i.test(message.split('.')[0]),
+      `${reason} opens with jargon rather than what happened`);
+  }
+});
+
+await test('an empty upload, a missing file and an oversized file are each refused', async () => {
+  const env = testEnv();
+  const user = testUser(env);
+  assert.equal((await createScan(uploadRequest(new Uint8Array(0)), env, user)).status, 400);
+
+  const noFile = new Request('https://atsy.test/api/scans', { method: 'POST', body: new FormData() });
+  assert.equal((await createScan(noFile, env, user)).status, 400);
+
+  const huge = new Uint8Array(MAX_UPLOAD_BYTES + 1);
+  huge.set(new TextEncoder().encode('%PDF-1.7'));
+  assert.equal((await createScan(uploadRequest(huge), env, user)).status, 413);
+  assert.equal(env.CV.objects.size, 0);
+});
+
+await test('a scan is refused outright when the encryption key is missing', async () => {
+  // Fail closed. A missing key must never degrade into storing a CV in clear.
+  const env = testEnv({ CV_MASTER_KEY: '' });
+  const user = testUser(env);
+  const response = await createScan(uploadRequest(fixture('clean')), env, user);
+  assert.equal(response.status, 503);
+  assert.equal(env.CV.objects.size, 0);
+  assert.equal(env.DB.prepare('SELECT COUNT(*) AS count FROM scans').first().count, 0);
+});
+
+await test('a bucket that will not accept the file fails the scan, not the record', async () => {
+  const env = testEnv();
+  env.CV.failPut = true;
+  const user = testUser(env);
+  const response = await createScan(uploadRequest(fixture('clean')), env, user);
+  assert.equal(response.status, 502);
+  const row = env.DB.prepare('SELECT status, failure_reason, r2_key FROM scans').first();
+  assert.equal(row.status, 'failed');
+  assert.equal(row.failure_reason, 'storage');
+  assert.equal(row.r2_key, null);
+});
+
+await test('the bot check gates uploads as well as sign-in', async () => {
+  const env = testEnv({ TURNSTILE_BYPASS: '0', TURNSTILE_SECRET_KEY: 'x' });
+  const user = testUser(env);
+  // No network in tests, so siteverify cannot be reached — which is the
+  // fail-closed path, and the one worth proving.
+  const response = await createScan(uploadRequest(fixture('clean')), env, user);
+  assert.equal(response.status, 403);
+  assert.equal(env.CV.objects.size, 0);
+});
+
+await test('the daily scan cap holds', async () => {
+  const env = testEnv({ SCANS_PER_DAY: '2' });
+  const user = testUser(env);
+  assert.equal((await createScan(uploadRequest(fixture('clean')), env, user)).status, 201);
+  assert.equal((await createScan(uploadRequest(fixture('clean')), env, user)).status, 201);
+  const third = await createScan(uploadRequest(fixture('clean')), env, user);
+  assert.equal(third.status, 429);
+  assert.equal((await third.json()).error, 'daily_limit');
+});
+
+/* ---------------- ownership ---------------- */
+
+await test('one reader cannot open, download or delete another reader\'s scan', async () => {
+  const env = testEnv();
+  const owner = testUser(env, 'owner@example.com');
+  const stranger = testUser(env, 'stranger@example.com');
+  const { scan } = await scanOf(env, owner, 'clean');
+  const request = new Request('https://atsy.test/');
+
+  assert.equal((await getScan(request, env, stranger, scan.id)).status, 404);
+  assert.equal((await getScanFile(request, env, stranger, scan.id)).status, 404);
+  assert.equal((await deleteScan(request, env, stranger, scan.id)).status, 404);
+  // Nothing was touched: 404 has to mean "not yours", not "gone now".
+  assert.equal(env.CV.objects.size, 1);
+  assert.equal((await getScan(request, env, owner, scan.id)).status, 200);
+
+  const list = await (await listScans(request, env, stranger)).json();
+  assert.equal(list.scans.length, 0);
+});
+
+await test('the X-ray decrypts the original and is never cacheable', async () => {
+  const env = testEnv();
+  const user = testUser(env);
+  const { scan } = await scanOf(env, user, 'clean');
+  const response = await getScanFile(new Request('https://atsy.test/'), env, user, scan.id);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('content-type'), 'application/pdf');
+  assert.match(response.headers.get('cache-control'), /no-store/);
+
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  assert.deepEqual(bytes, fixture('clean'), 'the round trip changed the file');
+
+  // Every decryption is recorded, with a hashed address and never a real one.
+  const audit = env.DB.prepare('SELECT action, scan_id, ip_hash FROM audit_log').first();
+  assert.equal(audit.action, 'scan_file_read');
+  assert.equal(audit.scan_id, scan.id);
+});
+
+await test('a tampered object is refused rather than half-read', async () => {
+  const env = testEnv();
+  const user = testUser(env);
+  const { scan } = await scanOf(env, user, 'clean');
+  const key = r2KeyFor(scan.id);
+  const bytes = env.CV.objects.get(key);
+  bytes[bytes.length - 1] ^= 0xff;
+  env.CV.objects.set(key, bytes);
+
+  const response = await getScanFile(new Request('https://atsy.test/'), env, user, scan.id);
+  assert.equal(response.status, 500);
+  assert.equal((await response.json()).error, 'file_unreadable');
+});
+
+await test('an object moved to another scan\'s key does not decrypt', async () => {
+  // The scan id is bound into the key derivation, so ciphertext cannot be
+  // reassigned to a row that did not produce it.
+  const env = testEnv();
+  const user = testUser(env);
+  const first = (await scanOf(env, user, 'clean')).scan;
+  const second = (await scanOf(env, user, 'tinyType')).scan;
+  env.CV.objects.set(r2KeyFor(second.id), env.CV.objects.get(r2KeyFor(first.id)));
+
+  const response = await getScanFile(new Request('https://atsy.test/'), env, user, second.id);
+  assert.equal(response.status, 500);
+});
+
+await test('a row that claims a file the bucket does not have corrects itself', async () => {
+  const env = testEnv();
+  const user = testUser(env);
+  const { scan } = await scanOf(env, user, 'clean');
+  env.CV.objects.clear();
+
+  const response = await getScanFile(new Request('https://atsy.test/'), env, user, scan.id);
+  assert.equal(response.status, 410);
+  const row = env.DB.prepare('SELECT r2_key FROM scans WHERE id = ?').bind(scan.id).first();
+  assert.equal(row.r2_key, null, 'the row still advertises an X-ray that cannot open');
+});
+
+await test('deleting a scan takes its object, its checks and its audit rows', async () => {
+  const env = testEnv();
+  const user = testUser(env);
+  const { scan } = await scanOf(env, user, 'clean');
+  env.DB.prepare('INSERT INTO scan_checks (scan_id, check_id) VALUES (?, ?)').bind(scan.id, 'P01').run();
+  await getScanFile(new Request('https://atsy.test/'), env, user, scan.id);
+
+  const response = await deleteScan(new Request('https://atsy.test/'), env, user, scan.id);
+  assert.equal(response.status, 200);
+  assert.equal(env.CV.objects.size, 0);
+  assert.equal(env.DB.prepare('SELECT COUNT(*) AS count FROM scans').first().count, 0);
+  assert.equal(env.DB.prepare('SELECT COUNT(*) AS count FROM scan_checks').first().count, 0);
+  assert.equal(env.DB.prepare('SELECT COUNT(*) AS count FROM audit_log').first().count, 0);
+  // A second delete is a 404, not a second cascade.
+  assert.equal((await deleteScan(new Request('https://atsy.test/'), env, user, scan.id)).status, 404);
+});
+
+await test('deleting an account takes every scan and every stored file with it', async () => {
+  const env = testEnv();
+  const user = testUser(env);
+  const other = testUser(env, 'other@example.com');
+  await scanOf(env, user, 'clean');
+  await scanOf(env, user, 'tinyType');
+  await scanOf(env, other, 'clean');
+  assert.equal(env.CV.objects.size, 3);
+
+  const removed = await deleteAllScansFor(env, user.id);
+  assert.equal(removed, 2);
+  assert.equal(env.CV.objects.size, 1, 'another reader lost their file too');
+  assert.equal(env.DB.prepare('SELECT COUNT(*) AS count FROM scans').first().count, 1);
+});
+
+await test('history lists a reader\'s own scans, newest first, with file availability', async () => {
+  const env = testEnv();
+  const user = testUser(env);
+  const first = (await scanOf(env, user, 'clean')).scan;
+  const second = (await scanOf(env, user, 'tinyType')).scan;
+  env.DB.prepare('UPDATE scans SET created_at = ? WHERE id = ?').bind(1000, first.id).run();
+  env.DB.prepare('UPDATE scans SET created_at = ? WHERE id = ?').bind(2000, second.id).run();
+
+  const list = await (await listScans(new Request('https://atsy.test/'), env, user)).json();
+  assert.deepEqual(list.scans.map((scan) => scan.id), [second.id, first.id]);
+  assert.equal(list.scans[0].file_available, true);
+  // The list is facts about the scan, never its content.
+  assert.ok(!JSON.stringify(list).includes('priya'));
+});
+
+/* ---------------- retention ---------------- */
+
+await test('retention windows come from config and default to 24h and 30 days', () => {
+  assert.equal(fileRetentionSeconds({}), 24 * 3600);
+  assert.equal(recordRetentionSeconds({}), 30 * 86400);
+  assert.equal(fileRetentionSeconds({ FILE_RETENTION_HOURS: '1' }), 3600);
+  assert.equal(recordRetentionSeconds({ RECORD_RETENTION_DAYS: '7' }), 7 * 86400);
+});
+
+await test('a scan past its file window loses the PDF and keeps the result', async () => {
+  const env = testEnv();
+  const user = testUser(env);
+  const { scan } = await scanOf(env, user, 'clean');
+
+  const report = await purgeFiles(env, scan.created_at + 25 * 3600);
+  assert.equal(report.purged, 1);
+  assert.equal(env.CV.objects.size, 0);
+
+  const row = env.DB.prepare('SELECT status, r2_key, model_json FROM scans WHERE id = ?')
+    .bind(scan.id).first();
+  assert.equal(row.r2_key, null);
+  assert.equal(row.status, 'complete', 'the reader lost their result along with the file');
+  assert.ok(row.model_json, 'the findings went with the PDF');
+});
+
+await test('a file still inside its window is left alone', async () => {
+  const env = testEnv();
+  const user = testUser(env);
+  const { scan } = await scanOf(env, user, 'clean');
+  const report = await purgeFiles(env, scan.created_at + 3600);
+  assert.equal(report.purged, 0);
+  assert.equal(env.CV.objects.size, 1);
+});
+
+await test('a bucket delete that fails leaves the key in place for the next sweep', async () => {
+  // The recoverable failure is a row that still names a live object. A row
+  // that has forgotten one is how ciphertext outlives its retention window.
+  const env = testEnv();
+  const user = testUser(env);
+  const { scan } = await scanOf(env, user, 'clean');
+  env.CV.failDelete = true;
+
+  const failedSweep = await purgeFiles(env, scan.created_at + 25 * 3600);
+  assert.equal(failedSweep.purged, 0);
+  assert.equal(failedSweep.failed, 1);
+  assert.ok(env.DB.prepare('SELECT r2_key FROM scans WHERE id = ?').bind(scan.id).first().r2_key);
+
+  env.CV.failDelete = false;
+  const retry = await purgeFiles(env, scan.created_at + 25 * 3600);
+  assert.equal(retry.purged, 1);
+  assert.equal(env.CV.objects.size, 0);
+});
+
+await test('a scan past its record window goes entirely, children and object first', async () => {
+  const env = testEnv();
+  const user = testUser(env);
+  const { scan } = await scanOf(env, user, 'clean');
+  env.DB.prepare('INSERT INTO scan_checks (scan_id, check_id) VALUES (?, ?)').bind(scan.id, 'P01').run();
+
+  const report = await purgeRecords(env, scan.created_at + 31 * 86400);
+  assert.equal(report.purged, 1);
+  assert.equal(env.CV.objects.size, 0, 'the record went and left its ciphertext behind');
+  assert.equal(env.DB.prepare('SELECT COUNT(*) AS count FROM scans').first().count, 0);
+  assert.equal(env.DB.prepare('SELECT COUNT(*) AS count FROM scan_checks').first().count, 0);
+});
+
+await test('spent codes, dead sessions and old audit rows are swept', async () => {
+  const env = testEnv();
+  const user = testUser(env);
+  const now = 10_000_000;
+  env.DB.prepare('INSERT INTO otp_codes (email, code_hash, expires_at, created_at) VALUES (?, ?, ?, ?)')
+    .bind('old@example.com', 'x', now - 100, now - 48 * 3600).run();
+  env.DB.prepare('INSERT INTO otp_codes (email, code_hash, expires_at, created_at) VALUES (?, ?, ?, ?)')
+    .bind('fresh@example.com', 'y', now + 600, now - 60).run();
+  env.DB.prepare('INSERT INTO sessions (token_hash, user_id, created_at, expires_at, last_used) VALUES (?, ?, ?, ?, ?)')
+    .bind('dead', user.id, now - 100, now - 1, now - 100).run();
+  env.DB.prepare('INSERT INTO sessions (token_hash, user_id, created_at, expires_at, last_used) VALUES (?, ?, ?, ?, ?)')
+    .bind('live', user.id, now - 100, now + 3600, now - 100).run();
+  env.DB.prepare('INSERT INTO audit_log (user_id, action, ip_hash, created_at) VALUES (?, ?, ?, ?)')
+    .bind(user.id, 'scan_file_read', 'h', now - 40 * 86400).run();
+
+  const report = await purgeEphemera(env, now);
+  assert.equal(report.codes, 1);
+  assert.equal(report.sessions, 1);
+  assert.equal(report.audit, 1);
+  assert.equal(env.DB.prepare('SELECT COUNT(*) AS count FROM otp_codes').first().count, 1);
+  assert.equal(env.DB.prepare('SELECT COUNT(*) AS count FROM sessions').first().count, 1);
+});
+
+await test('one failing stage does not stop the rest of the sweep', async () => {
+  const env = testEnv();
+  const user = testUser(env);
+  const { scan } = await scanOf(env, user, 'clean');
+  env.DB.prepare('INSERT INTO otp_codes (email, code_hash, expires_at, created_at) VALUES (?, ?, ?, ?)')
+    .bind('old@example.com', 'x', 1, 1).run();
+  // The stage most likely to fail is not the stage that matters most.
+  env.CV.failDelete = true;
+
+  const report = await runRetention(env, scan.created_at + 31 * 86400);
+  assert.equal(report.files.failed, 1);
+  assert.equal(report.ephemera.codes, 1, 'a failing R2 delete stopped the database sweep');
+});
+
+await test('the cron trigger that runs the sweep is configured', () => {
+  const config = JSON.parse(read('wrangler.jsonc').replace(/^\s*\/\/.*$/gm, ''));
+  assert.deepEqual(config.triggers.crons, ['*/30 * * * *']);
+  assert.equal(config.vars.FILE_RETENTION_HOURS, '24');
+  assert.equal(config.vars.RECORD_RETENTION_DAYS, '30');
+});
+
+/* ---------------- what the corpus proves ---------------- */
+
+await test('the new fixtures each show the defect they were built for', async () => {
+  const summaryOf = async (name) => modelSummary(await buildModel(fixture(name)));
+
+  const noContact = await summaryOf('noContact');
+  assert.equal(noContact.entities.hasEmail, false);
+  assert.equal(noContact.entities.hasPhone, false);
+
+  const footer = await summaryOf('footerContact');
+  assert.ok(footer.layout.footerItems > 0, 'the contact line is not in the footer band');
+
+  const running = await summaryOf('runningHeadFoot');
+  assert.equal(running.layout.repeatedHeader, true);
+
+  const noSections = await summaryOf('noSections');
+  assert.ok(noSections.sections.missingRequired.length >= 3, 'a CV with no headings found sections');
+
+  const oldest = await summaryOf('oldestFirst');
+  assert.equal(oldest.entities.reverseChronological, false);
+  assert.equal((await summaryOf('clean')).entities.reverseChronological, true);
+
+  const gap = await summaryOf('careerGap');
+  assert.ok(gap.entities.gapMonths.some((months) => months >= 12), 'the 19-month gap was not seen');
+  assert.deepEqual((await summaryOf('clean')).entities.gapMonths, []);
+
+  const tiny = await summaryOf('tinyType');
+  assert.ok(tiny.sections.bodySize <= 8, `body size read as ${tiny.sections.bodySize}`);
+
+  const bars = await summaryOf('skillBars');
+  assert.ok(bars.sections.found.includes('skills'));
 });
 
 /* ---------------- report ---------------- */

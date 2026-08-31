@@ -268,3 +268,70 @@ Atsy's own incidents start at #36.
     49. → E2E now blanks `TURNSTILE_SITE_KEY` as well as bypassing verification:
     an environment with no shield must look like one to the client as well as
     the server. Half-configured is the state that breaks things — see #49.
+
+51. **`hidden` did nothing on a card, so a result panel for a scan that never
+    happened stayed on screen.** The UA stylesheet's `[hidden] { display: none }`
+    has the same specificity as `.card { display: flex }`, and the author sheet
+    wins on ties — so every element that both sets `display` and gets toggled by
+    the `hidden` attribute was permanently visible. It went unnoticed because
+    the screens toggled the same way are `.screen` sections, which set no
+    `display` of their own. → `[hidden] { display: none !important; }` once,
+    globally, near the top of the component layer. A toggle mechanism used
+    across an app has to work for every component, not just the ones it was
+    written against.
+
+52. **Career-gap detection was switched off for almost every real CV.** The gap
+    loop skipped a pair of roles whenever `newer.range.open` was true — i.e.
+    whenever the more recent role ran to "Present". Since that is the normal
+    shape of a CV, the gap immediately before someone's current job, which is
+    the one a recruiter asks about, was never reported. The condition was
+    irrelevant to the arithmetic: a gap needs the older role's *end* and the
+    newer role's *start*, and whether the newer role has finished says nothing
+    about when it began. → Found only because a new fixture (`careerGap`) was
+    built to trigger the check and did not. A check with no fixture that fires
+    it is a check with no evidence it works — which is why M3's acceptance
+    criterion is one triggering and one non-triggering fixture per check.
+
+53. **The deploy warned "the bot shield is OFF" on a deploy where it was on.**
+    The check read GitHub Actions secrets, but provisioning writes
+    `TURNSTILE_SECRET_KEY`, `CV_MASTER_KEY` and `IP_HASH_SALT` straight to the
+    Worker with `wrangler secret put`, so they deliberately have no GitHub
+    counterpart. Every green deploy printed two alarming and false warnings.
+    → Check the store that actually serves the request: `wrangler secret list`
+    names (never values). A monitor that reports a problem which is not there
+    trains you to ignore it, which costs you the one time it is right. Note the
+    direction, too — this one lied *pessimistically*, and the sibling risk is a
+    check that lies reassuringly, as in #55.
+
+54. **Every upload failed locally with "storage unavailable".** `CV_MASTER_KEY`
+    is a Worker secret with no counterpart in `wrangler.jsonc`, so `wrangler
+    dev` had none and `createScan` correctly refused rather than storing a CV in
+    clear. Correct behaviour, useless for a test. → A fixed, obviously-fake
+    development key (32 bytes of 'A') is passed with `--var` from the Playwright
+    config, alongside `OTP_ECHO` and `TURNSTILE_BYPASS`, and a unit test forbids
+    any key material — that one included — from appearing in `wrangler.jsonc`.
+    Fail-closed controls need a documented development path, or the first person
+    to run the suite concludes the feature is broken.
+
+55. **The result panel showed a reassuring green next to a red one, for the same
+    problem.** A two-column CV reported "Columns: more than one" in red and
+    "Reading order confidence: 100%" in green. Both numbers were right: the
+    metric asks whether the stored text order follows a top-to-bottom sweep, and
+    on a two-column page that sweep runs *across the gutter*, so a high score
+    means the columns interleave. The label made a bad fact look like a good
+    one. A low character count was green for the same reason — no threshold at
+    all. → Every value shown gets its verdict from a threshold that a reader
+    would agree with, and a metric whose meaning inverts in some layout says so
+    in the value ("100% — but the columns interleave"). Atsy never shows a
+    figure it did not compute; it must also never colour one in a way the figure
+    does not support.
+
+56. **A long filename pushed the phone layout sideways by 83px.** `.fname` sets
+    `white-space: nowrap` with `overflow: hidden` and `text-overflow: ellipsis`,
+    which works where it was written — inside the demo's stage bar, which
+    constrains its width. Reused as a bare inline span in a card, there was
+    nothing to overflow *against*, so it simply ran off the page. → Truncation
+    styles are only meaningful on a box with a bounded width; reuse of a class
+    inherits its assumptions, not just its declarations. The result card's
+    filename now wraps (`overflow-wrap: anywhere`) instead, and the horizontal
+    scroll gate caught it because the gate runs on the new screen too.
