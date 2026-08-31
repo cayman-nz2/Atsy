@@ -1,0 +1,28 @@
+{
+  // Worker name — becomes atsy.<account>.workers.dev.
+  // Renaming later changes the URL and strands the old worker.
+  "name": "atsy",
+  "main": "worker.js",
+  "compatibility_date": "2026-08-01",
+  // Primary URL — custom domain on the vibecod3.app zone (same Cloudflare
+  // account as pricey.vibecod3.app). Wrangler provisions DNS + certificate.
+  "routes": [{ "pattern": "atsy.vibecod3.app", "custom_domain": true }],
+  // Keep the workers.dev URL live too, so old links never break.
+  "workers_dev": true,
+  // Static assets in ./dist are served first; unmatched routes (/api/*) fall
+  // through to worker.js. Custom asset headers live in public/_headers.
+  "assets": { "directory": "./dist", "binding": "ASSETS" },
+  "observability": { "enabled": true },
+  "vars": {
+    // OTP_ECHO and TURNSTILE_BYPASS are local/E2E flags passed with
+    // `wrangler dev --var`. They must NEVER appear in this file.
+    "ADMIN_EMAILS": "avishkapadia@gmail.com",
+    "OWNER_EMAIL": "avishkapadia@gmail.com",
+    "EMAIL_FROM": "hello@vibecod3.app"
+  }
+  // Added in later milestones, once the owner has created them:
+  //   M1  turnstile site key var + TURNSTILE_SECRET_KEY worker secret
+  //   M1  d1_databases: DB -> atsy-db
+  //   M2  r2_buckets: CV -> atsy-cv, ai binding, send_email binding,
+  //       ratelimits, cron trigger for the retention sweep
+}

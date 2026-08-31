@@ -1,0 +1,13 @@
+// Plain-language release history, newest first. Shown in the app so the owner
+// (and anyone else) can tell what is live by eye. A unit test enforces that
+// RELEASES[0].version === VERSION — bump both together, every release.
+export const RELEASES = [
+  {
+    version: '0.1.0',
+    date: '2026-08-31',
+    notes: [
+      'First deploy: the Atsy landing page, the design system, and the machine-view demo.',
+      'Health endpoint so every deploy proves which version is actually live.',
+    ],
+  },
+];

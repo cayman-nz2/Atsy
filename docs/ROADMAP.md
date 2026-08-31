@@ -1,0 +1,127 @@
+# Atsy — build order
+
+Milestone-sized PRs, self-merged once CI is green, each one deployed and
+verified through the GitHub Actions API before the next starts. No milestone is
+"done" until its acceptance criteria are demonstrably true on
+https://atsy.vibecod3.app.
+
+---
+
+## Owner actions (only Avish can do these)
+
+These are the only blockers that are not Claude's to clear. Everything else in
+this roadmap proceeds without approval.
+
+| # | Action | Where | Needed by |
+| --- | --- | --- | --- |
+| 1 | Add `CLOUDFLARE_API_TOKEN` (template: **Edit Cloudflare Workers**) and `CLOUDFLARE_ACCOUNT_ID` to the repo's Actions secrets | GitHub → Settings → Secrets and variables → Actions | M0 |
+| 2 | Create the D1 database `atsy-db` (or confirm the API token may create it) and paste the `database_id` | Cloudflare dash → Workers → D1 | M0 |
+| 3 | Create the R2 bucket `atsy-cv` (private) | Cloudflare dash → R2 | M2 |
+| 4 | Create a Turnstile site for `atsy.vibecod3.app`; put the **site key** in chat, add the **secret key** as `TURNSTILE_SECRET_KEY` | Cloudflare dash → Turnstile | M1 |
+| 5 | Add `CV_MASTER_KEY` (32 random bytes, base64) and `IP_HASH_SALT` as Actions secrets | GitHub Actions secrets | M2 |
+| 6 | Confirm the sender address for Atsy (proposed: `hello@vibecod3.app`) | — | M1 |
+
+`vibecod3.app` is already onboarded in Cloudflare Email Service (proved by
+Pricey sending live OTPs since 2026-08-15), so no email domain setup is needed.
+
+---
+
+## M0 — Skeleton and pipeline
+
+**Ships:** the repository scaffolding, `wrangler.jsonc`, `worker.js` routing,
+`src/version.js`, the landing shell with the real design tokens and fonts,
+`/api/health`, `.github/workflows/deploy.yml` with the full gate set, unit-test
+runner, Playwright config, and the screenshot tour script.
+
+**Done when:** a merge to `main` produces a green Actions run whose deploy job
+verifies that `/api/health` reports the checked-out `VERSION`, and
+`atsy.vibecod3.app` serves the landing page over the custom domain.
+
+## M1 — Identity
+
+**Ships:** email OTP request/verify, sessions, sign-in and code screens,
+account menu, logout, `/privacy`, `/about`, delete-account cascade (with
+nothing yet to delete), Turnstile wired with the CI secret sync, rate limits
+and their tests.
+
+**Done when:** a real code arrives by email in under 30 s, the sixth wrong code
+in an hour is refused, a second browser cannot reuse a session cookie after
+logout, and the E2E suite signs in deterministically with `OTP_ECHO`.
+
+## M2 — Extraction core
+
+**Ships:** `unpdf` integration, the positional document model, layout analysis
+(columns, reading order, header/footer bands, tables), section detection,
+entity extraction (name, contacts, roles, dates, skills), the encryption
+envelope, R2 storage, the retention cron, and the golden fixture corpus
+(≥ 20 CVs).
+
+**Done when:** every fixture parses to its expected document model in `node`
+with no Cloudflare runtime, the crypto round-trip and tamper tests pass, and a
+scan record purges its R2 object on schedule.
+
+## M3 — Scoring
+
+**Ships:** the full check catalogue (P/B/C/D/E), pillar scoring, bands, the
+engine simulation, lexicons, the skills taxonomy in D1, and the findings API.
+
+**Done when:** every check has a fixture that triggers it and one that does
+not, the same fixture scores byte-identically twice, and the scores of all 20
+fixtures are committed as golden values.
+
+## M4 — The results experience
+
+**Ships:** the results screen (score, pillars, segmented navigation), the fix
+list with evidence and point deltas, the client-side X-ray with region
+highlighting, the machine view, the engine cards, upload states, empty/error
+states, both themes, the overlap gate, and the screenshot tour across all
+screens at both device sizes.
+
+**Done when:** the keyboard-only journey passes end to end, the overlap gate is
+green, the tour screenshots are reviewed for boundaries at 393 and 430 wide in
+light and dark, and p95 upload→results is under 20 s.
+
+## M5 — Role fit and rewrites
+
+**Ships:** job-description paste, deterministic Role Fit scoring, missing
+must-haves, the integrity cap, AI bullet rewrites with redaction, the daily
+neuron budget with graceful degradation, and per-user caps.
+
+**Done when:** the redaction test proves no identity reaches the model, the
+budget test proves the product still works with AI disabled, and Role Fit is
+stable for a fixed CV + JD pair.
+
+## M6 — Loop and operations
+
+**Ships:** scan history with deltas, report export, the feedback box (email
+required), owner notification emails (new signup, new feedback), the "it's
+built" notification sweep, and the admin portal with aggregates and the
+feedback inbox.
+
+**Done when:** the owner receives a signup email and a feedback email in
+production, the admin portal shows real numbers on his phone, and the
+admin-blindness test proves no endpoint returns CV content.
+
+## M7 — v1.0.0
+
+**Ships:** accessibility audit and fixes, performance budget enforcement, copy
+pass, the launch checklist, the release notes entry, and the version bump in
+every display location.
+
+**Done when:** every acceptance criterion above is true in production, the
+`RELEASES` entry matches `VERSION`, and a fresh phone session completes
+land → sign in → scan → fix → re-scan without a single dead end.
+
+---
+
+## After v1.0 (not scope, recorded so it is not re-litigated)
+
+- **v1.1 DOCX support** — the parse core is format-agnostic; only the reader
+  is new. DOCX also lets Atsy answer "should I submit DOCX instead?" with
+  evidence.
+- **v1.2 Full spellcheck** — a dictionary loaded from static assets rather than
+  the bundle.
+- **v1.3 Section-level rewriting assistance** — still bullet-scoped, still
+  redacted, still never a whole-CV generator.
+- **Never:** paid tiers, recruiter/API access, auto-generated CVs, or anything
+  that games a parser in a way a human reviewer would catch.
