@@ -94,6 +94,36 @@ test.describe('screenshot tour', () => {
         await fold.evaluate((node) => { node.open = true; });
       }
       await page.screenshot({ path: `screenshots/scan-folds-phone-430-${theme}.png`, fullPage: true });
+
+      // Role Fit, with a real job description behind it.
+      await page.locator('#jd').fill([
+        'Operations Manager',
+        'We need an Operations Manager for our Auckland depot network.',
+        '',
+        'Requirements:',
+        '- 5+ years managing warehouse or dispatch operations',
+        '- Strong SQL and Power BI for reporting',
+        '- Lean and continuous improvement experience',
+        '',
+        'Nice to have:',
+        '- Kubernetes',
+        '- Salesforce',
+      ].join('\n'));
+      await page.getByRole('button', { name: 'Score the match' }).click();
+      await expect(page.locator('#match-result')).toBeVisible();
+      await page.locator('#form-match').locator('..').screenshot({
+        path: `screenshots/role-fit-phone-430-${theme}.png`,
+      });
+
+      // A rewrite suggestion, degraded to deterministic guidance because the
+      // tour runs with no AI binding — which is the path most readers hit once
+      // the daily budget is spent, so it is the one worth looking at.
+      const rewrite = page.locator('#fix-list li').filter({ hasText: 'Suggest a rewrite' }).first();
+      if (await rewrite.count()) {
+        await rewrite.getByRole('button', { name: 'Suggest a rewrite' }).click();
+        await expect(rewrite.locator('.rewritebox').first()).toBeVisible();
+        await rewrite.screenshot({ path: `screenshots/rewrite-phone-430-${theme}.png` });
+      }
     });
   }
 

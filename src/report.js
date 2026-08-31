@@ -3,6 +3,17 @@
 // RELEASES[0].version === VERSION — bump both together, every release.
 export const RELEASES = [
   {
+    version: '0.8.0',
+    date: '2026-08-31',
+    notes: [
+      'Paste a job description and Atsy scores how well your CV matches it — with the must-haves it could not find, and an honest note that 75-85% is the realistic target.',
+      'Role Fit never changes your Atsy score. They answer different questions, and a score that moved because you pasted a different job would be useless for tracking progress.',
+      'Suggested rewrites for the bullets that need them. Your name, employers, email, phone and links are removed before anything is sent, one bullet at a time, and nothing is ever applied for you.',
+      'When AI is unavailable the product still works completely: you get the same deterministic advice the model works from, and it never invents a number.',
+      'A feedback box that reaches a person, and gets a reply.',
+    ],
+  },
+  {
     version: '0.7.0',
     date: '2026-08-31',
     notes: [

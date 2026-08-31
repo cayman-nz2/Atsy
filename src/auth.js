@@ -164,6 +164,11 @@ export async function currentUser(request, env) {
   return { id: row.id, email: row.email, created_at: row.created_at };
 }
 
+/** The signed-in user, or null. For endpoints that work either way. */
+export async function currentUserOrNull(request, env) {
+  return currentUser(request, env);
+}
+
 export async function logout(request, env) {
   const token = getCookie(request, 'sid');
   if (token) {
@@ -181,6 +186,13 @@ export async function logout(request, env) {
 // fixed. Later milestones add matches and feedback to the same cascade.
 export async function deleteAccount(request, env, user) {
   const scans = await deleteAllScansFor(env, user.id);
+  await env.DB.batch([
+    env.DB.prepare('DELETE FROM job_matches WHERE user_id = ?').bind(user.id),
+    env.DB.prepare('DELETE FROM ai_user_usage WHERE user_id = ?').bind(user.id),
+    // Feedback goes too. It carries the reader's email and their own words,
+    // and "delete everything" has to mean everything.
+    env.DB.prepare('DELETE FROM feedback WHERE user_id = ? OR email = ?').bind(user.id, user.email),
+  ]);
   await env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(user.id).run();
   await env.DB.prepare('DELETE FROM otp_codes WHERE email = ?').bind(user.email).run();
   const removed = await env.DB.prepare('DELETE FROM users WHERE id = ?').bind(user.id).run();

@@ -11,6 +11,11 @@ import {
   createScan, listScans, getScan, getScanFile, deleteScan, MAX_UPLOAD_BYTES,
 } from './src/scan.js';
 import { runRetention } from './src/retention.js';
+import { matchScan } from './src/match.js';
+import { rewriteBullets } from './src/rewrite.js';
+import { submitFeedback, adminStats, adminFeedback, resolveFeedback } from './src/admin.js';
+import { currentUserOrNull } from './src/auth.js';
+import { readJson } from './src/util.js';
 
 // Routes that need a signed-in user. Everything else is public.
 async function withUser(request, env, handler) {
@@ -73,6 +78,35 @@ export default {
         return withUser(request, env, (user) => deleteScan(request, env, user, scanId));
       }
       return err('method_not_allowed', 405);
+    }
+
+    // Role Fit and AI rewrites hang off one scan each.
+    const scanAction = path.match(/^\/api\/scans\/([0-9a-f]{32})\/(match|rewrite)$/);
+    if (scanAction && method === 'POST') {
+      const [, scanId, action] = scanAction;
+      if (action === 'match') {
+        return withUser(request, env, (user) => matchScan(request, env, user, scanId));
+      }
+      return withUser(request, env, async (user) =>
+        rewriteBullets(request, env, user, scanId, await readJson(request)));
+    }
+
+    // Feedback is open to anyone: someone who cannot sign in is exactly the
+    // person most likely to have something worth hearing.
+    if (path === '/api/feedback' && method === 'POST') {
+      const user = await currentUserOrNull(request, env);
+      return submitFeedback(request, env, ctx, user);
+    }
+
+    if (path === '/api/admin/stats' && method === 'GET') {
+      return withUser(request, env, (user) => adminStats(request, env, user));
+    }
+    if (path === '/api/admin/feedback' && method === 'GET') {
+      return withUser(request, env, (user) => adminFeedback(request, env, user));
+    }
+    const feedbackItem = path.match(/^\/api\/admin\/feedback\/(\d+)$/);
+    if (feedbackItem && method === 'POST') {
+      return withUser(request, env, (user) => resolveFeedback(request, env, user, feedbackItem[1]));
     }
 
     if (path.startsWith('/api/')) return err('not_found', 404);

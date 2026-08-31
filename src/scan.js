@@ -216,6 +216,12 @@ function scanResponse(row, model, result) {
         email: model.entities.contact.email,
         phone: model.entities.contact.phone ? model.entities.contact.phone.text : null,
         link: model.entities.contact.link,
+        // Employers are here for one reason: a rewrite request sends them back
+        // so the Worker can strip them out of a bullet before any model sees
+        // it. Like the rest of this block they are never stored.
+        employers: [...new Set(model.entities.roles
+          .map((role) => role.employer)
+          .filter((name) => name && name.length > 2))],
       }
       : null,
     // The machine view: the text in the order the FILE stores it, which is the
@@ -539,6 +545,7 @@ export async function deleteScan(request, env, user, scanId) {
 
   await env.DB.batch([
     env.DB.prepare('DELETE FROM scan_checks WHERE scan_id = ?').bind(scanId),
+    env.DB.prepare('DELETE FROM job_matches WHERE scan_id = ?').bind(scanId),
     env.DB.prepare('DELETE FROM audit_log WHERE scan_id = ?').bind(scanId),
   ]);
   if (row.r2_key && env.CV) await env.CV.delete(row.r2_key).catch(() => {});
@@ -560,6 +567,7 @@ export async function deleteAllScansFor(env, userId) {
     env.DB.prepare(
       'DELETE FROM scan_checks WHERE scan_id IN (SELECT id FROM scans WHERE user_id = ?)',
     ).bind(userId),
+    env.DB.prepare('DELETE FROM job_matches WHERE user_id = ?').bind(userId),
     env.DB.prepare('DELETE FROM audit_log WHERE user_id = ?').bind(userId),
     env.DB.prepare('DELETE FROM scans WHERE user_id = ?').bind(userId),
   ]);

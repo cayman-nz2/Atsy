@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en-NZ">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atsy admin</title>
+<meta name="description" content="Atsy operations: aggregates and the feedback inbox.">
+<meta name="theme-color" content="#FAF8F4" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#101116" media="(prefers-color-scheme: dark)">
+<link rel="preload" href="/fonts/instrument-sans-var.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/atsy.css">
+<link rel="canonical" href="https://atsy.vibecod3.app/admin">
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<nav class="nav">
+  <div class="wrap">
+    <a class="mark" href="/"><i></i>Atsy</a>
+    <div class="navactions">
+      <button class="themebtn" type="button" id="themebtn">Dark</button>
+      <a class="btn btn-quiet btn-nav" href="/app">Sign in</a>
+    </div>
+  </div>
+</nav>
+
+<main id="main" class="screenwrap">
+  <div class="wrap">
+    <section class="screen screen-wide">
+      <p class="eyebrow">Operations</p>
+      <h1 class="screen-title">How Atsy is doing</h1>
+      <p class="screen-lede" id="admin-state">Checking…</p>
+
+      <div id="admin-body" hidden>
+        <div class="card">
+          <h2 class="cardtitle">People and scans</h2>
+          <dl class="reads" id="admin-counts"></dl>
+        </div>
+
+        <div class="card">
+          <h2 class="cardtitle">What people get wrong most</h2>
+          <p class="fineprint">Counts of triggered checks across every scan. No scan is readable
+            from here — this is the whole point of storing the check ids separately.</p>
+          <dl class="reads" id="admin-problems"></dl>
+        </div>
+
+        <div class="card">
+          <h2 class="cardtitle">Scans that could not be read</h2>
+          <p id="admin-nofailures" hidden>None.</p>
+          <dl class="reads" id="admin-failures"></dl>
+        </div>
+
+        <div class="card">
+          <h2 class="cardtitle">Feedback</h2>
+          <p id="admin-nofeedback" hidden>Nothing yet.</p>
+          <ul class="fixes" id="admin-feedback"></ul>
+        </div>
+      </div>
+    </section>
+  </div>
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <span>Atsy &middot; free CV scanner &middot; <span id="version">v0.8.0</span></span>
+    <nav class="footnav" aria-label="More from Atsy">
+      <a href="/">Home</a>
+      <a href="/about">How it works</a>
+      <a href="/app">Sign in</a>
+    </nav>
+  </div>
+</footer>
+<script src="/app.js"></script>
+<script src="/admin.js"></script>
+</body>
+</html>

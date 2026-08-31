@@ -120,6 +120,27 @@
       </div>
 
       <div class="card">
+        <h2 class="cardtitle">Tell me what is wrong with this</h2>
+        <p>A score that felt wrong, a fix that made no sense, or something that broke. It reaches
+          the person who built Atsy, and you will get a reply.</p>
+        <form class="form" id="form-feedback" novalidate>
+          <label class="field-label" for="feedback-type">What kind of thing</label>
+          <select class="input" id="feedback-type" name="type">
+            <option value="wrong-score">The score seems wrong</option>
+            <option value="bug">Something is broken</option>
+            <option value="idea">An idea</option>
+            <option value="other">Something else</option>
+          </select>
+          <label class="field-label" for="feedback-message">What happened</label>
+          <textarea class="input textarea" id="feedback-message" name="message" rows="4"
+            placeholder="As much detail as you can."></textarea>
+          <p class="formerror" id="feedback-error" role="alert" hidden></p>
+          <p class="formok" id="feedback-ok" role="status" hidden></p>
+          <button class="btn btn-quiet" type="submit" id="feedback-submit">Send it</button>
+        </form>
+      </div>
+
+      <div class="card">
         <h2 class="cardtitle">Your data</h2>
         <ul class="tightlist">
           <li>Email address — kept until you delete your account</li>
@@ -180,6 +201,33 @@
         <p class="fineprint" id="engine-disclaimer"></p>
       </div>
 
+      <div class="card">
+        <h2 class="cardtitle">Match this against a job</h2>
+        <p>Paste a job description and Atsy scores how well this CV matches it. Role Fit never
+          changes your Atsy score — they answer different questions.</p>
+        <form class="form" id="form-match" novalidate>
+          <label class="field-label" for="jd">Job description</label>
+          <textarea class="input textarea" id="jd" name="jd" rows="6"
+            placeholder="Paste the whole advert, including the requirements list."></textarea>
+          <p class="formerror" id="match-error" role="alert" hidden></p>
+          <button class="btn btn-quiet" type="submit" id="match-submit">Score the match</button>
+        </form>
+
+        <div id="match-result" hidden>
+          <div class="note" id="fit-unreadable" hidden></div>
+          <div class="fitrow" id="fit-row">
+            <span class="fitnum" id="fit-number">—</span>
+            <span class="fitof">Role Fit / 100</span>
+          </div>
+          <div class="note" id="fit-cap" hidden></div>
+          <ul class="pillars" id="fit-components"></ul>
+          <h3 class="cardtitle">What the advert asks for that Atsy could not find</h3>
+          <p id="fit-nomissing" hidden>Nothing the advert asks for is missing from your CV.</p>
+          <ul class="tightlist" id="fit-missing"></ul>
+          <p class="fineprint" id="fit-note"></p>
+        </div>
+      </div>
+
       <details class="fold">
         <summary class="foldtitle">What the machine actually reads</summary>
         <p class="foldnote">The text in the order the file stores it — not the order you see on the
@@ -213,7 +261,7 @@
 
 <footer class="foot">
   <div class="wrap">
-    <span>Atsy &middot; free CV scanner &middot; <span id="version">v0.7.0</span></span>
+    <span>Atsy &middot; free CV scanner &middot; <span id="version">v0.8.0</span></span>
     <nav class="footnav" aria-label="More from Atsy">
       <a href="/">Home</a>
       <a href="/about">How it works</a>

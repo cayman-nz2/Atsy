@@ -398,3 +398,39 @@ Atsy's own incidents start at #36.
     `$HOME/.config/.wrangler/logs/` and `test-results/` into an artifact on any
     failure. A diagnostic gap you have already identified is a thing to close,
     not a note to leave for the next person to hit it.
+
+60. **A fixture that silently tested nothing, and the modelling bug it hid.**
+    A "wall of text" fixture wrote one 260-character bullet as a single
+    unwrapped line. pdf.js discards glyphs positioned outside the page box, so
+    the line was clipped at 112 characters and the long-bullet check could
+    never fire. Fixing the fixture exposed the real defect underneath: a bullet
+    in a real CV **wraps**, and every wrapped line was being counted as its own
+    bullet — which corrupted every percentage in Pillar D at once. A wrapped
+    bullet whose number sat on the second line read as one bullet with a metric
+    and one without. → Continuation lines are now rejoined before the content
+    checks run. Two lessons: a fixture that does not fire the check it was
+    built for is a bug in the fixture, not an acceptable result; and the
+    document model has to match how documents are actually written, not how
+    they are convenient to parse.
+
+61. **Adding the Workers AI binding broke local development entirely.**
+    Workers AI has no local simulation, so the binding sends `wrangler dev`
+    into a remote proxy session, which needs `CLOUDFLARE_API_TOKEN` — and the
+    whole E2E suite failed to start with an authentication error that had
+    nothing to do with the tests. → `wrangler dev --local` disables remote
+    bindings. That is also the environment the suite *should* run in: the
+    product must work completely with AI unavailable, and running local means
+    it genuinely is, so the degraded path is exercised on every run rather than
+    only in a unit test. Any binding without a local simulation will do this;
+    check `--local` before assuming the config is wrong.
+
+62. **A number that meant two opposite things.** Role Fit scored a two-column
+    CV at 5/100. The arithmetic was right and the message was badly wrong: the
+    CV was not a weak match, it was a CV whose experience section could not be
+    parsed, so there was nothing to match against. Presented as a score it read
+    as a judgement of the person. → Role Fit now carries a `reliable` flag and
+    leads with "no dated roles could be read from your experience" when that is
+    the truth, and the tenure comparison is suppressed rather than reporting
+    "your CV shows about 0 years" — a statement about Atsy dressed up as a
+    statement about the reader. Any derived number needs to know when its
+    inputs were missing, and say so louder than it says the number.

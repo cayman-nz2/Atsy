@@ -79,6 +79,7 @@ export async function purgeRecords(env, now = nowSec()) {
     // would never be found again by anything that looks up scans.
     await env.DB.batch([
       env.DB.prepare('DELETE FROM scan_checks WHERE scan_id = ?').bind(row.id),
+      env.DB.prepare('DELETE FROM job_matches WHERE scan_id = ?').bind(row.id),
       env.DB.prepare('DELETE FROM audit_log WHERE scan_id = ?').bind(row.id),
     ]);
     const removed = await env.DB.prepare('DELETE FROM scans WHERE id = ?').bind(row.id).run();

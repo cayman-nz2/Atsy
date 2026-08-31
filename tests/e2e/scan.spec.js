@@ -263,6 +263,84 @@ test.describe('scanning a CV', () => {
     await expect(page.locator('#machine-view')).toBeHidden();
   });
 
+  test('Role Fit scores a pasted job description without moving the Atsy score', async ({ page }) => {
+    await signIn(page, address('scan-fit'));
+    expect(await upload(page, 'clean')).toBe(201);
+    const atsyScore = await page.locator('#score-number').textContent();
+
+    await page.locator('#jd').fill([
+      'Operations Manager',
+      'We need an Operations Manager for our Auckland depot network.',
+      '',
+      'Requirements:',
+      '- 5+ years managing warehouse or dispatch operations',
+      '- Strong SQL and Power BI for reporting',
+      '- Lean and continuous improvement experience',
+      '',
+      'Nice to have:',
+      '- Kubernetes',
+    ].join('\n'));
+    await page.getByRole('button', { name: 'Score the match' }).click();
+
+    await expect(page.locator('#match-result')).toBeVisible();
+    await expect(page.locator('#fit-number')).not.toHaveText('\u2014');
+    await expect(page.locator('#fit-components li')).toHaveCount(5);
+    await expect(page.locator('#fit-components')).toContainText('Hard-skill coverage');
+    // Kubernetes is in the advert and not in the CV.
+    await expect(page.locator('#fit-missing')).toContainText('Kubernetes');
+    // The honest target, said every time.
+    await expect(page.locator('#fit-note')).toContainText('75');
+
+    // And the Atsy score is untouched: the two numbers answer different
+    // questions, and one must not move the other.
+    await expect(page.locator('#score-number')).toHaveText(atsyScore);
+  });
+
+  test('a too-short job description is refused with a reason', async ({ page }) => {
+    await signIn(page, address('scan-fit-short'));
+    expect(await upload(page, 'clean')).toBe(201);
+    await page.locator('#jd').fill('Operations Manager wanted.');
+    await page.getByRole('button', { name: 'Score the match' }).click();
+    await expect(page.locator('#match-error')).toContainText('whole advert');
+    await expect(page.locator('#match-result')).toBeHidden();
+  });
+
+  test('a rewrite is offered only where better wording would help', async ({ page }) => {
+    await signIn(page, address('scan-rewrite'));
+    expect(await upload(page, 'noMetrics')).toBe(201);
+
+    // D03 (no numbers) is rewritable, so its card carries the affordance.
+    const rewritable = page.locator('#fix-list li', { hasText: 'Bullets carry no numbers' });
+    await expect(rewritable.getByRole('button', { name: 'Suggest a rewrite' })).toBeVisible();
+
+    // With no AI binding in dev the product degrades rather than failing, and
+    // the guidance never invents a number.
+    await rewritable.getByRole('button', { name: 'Suggest a rewrite' }).click();
+    const box = rewritable.locator('.rewritebox').first();
+    await expect(box).toBeVisible();
+    await expect(box).toContainText('add the number');
+    await expect(box).toContainText('Your line:');
+  });
+
+  test('feedback reaches the owner and thanks the reader', async ({ page }) => {
+    await signIn(page, address('scan-feedback'));
+    await page.locator('#feedback-message').fill('The score felt low for a CV I know is good.');
+    await page.getByRole('button', { name: 'Send it' }).click();
+    await expect(page.locator('#feedback-ok')).toBeVisible();
+    await expect(page.locator('#feedback-ok')).toContainText('reply');
+    await expect(page.locator('#feedback-message')).toHaveValue('');
+  });
+
+  test('the admin portal is invisible to an ordinary reader', async ({ page }) => {
+    await signIn(page, address('scan-notadmin'));
+    // 404, not 403: an endpoint that admits it exists is worth attacking.
+    const status = await page.evaluate(async () => {
+      const response = await fetch('/api/admin/stats', { credentials: 'same-origin' });
+      return response.status;
+    });
+    expect(status).toBe(404);
+  });
+
   test('the retention sweep is wired to the cron trigger and runs clean', async ({ page }) => {
     // The sweep's decisions are unit-tested against real SQL. What this proves
     // is the part a unit test cannot: that the scheduled handler is exported
