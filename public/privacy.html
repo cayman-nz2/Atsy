@@ -60,8 +60,8 @@
         <li><strong>A salted hash of your IP address</strong> — never the address itself — purely to
           stop someone flooding the sign-in form.</li>
       </ul>
-      <p class="fineprint">Scoring is not live yet, so no scan carries a score. Nothing else on
-        this page is aspirational — it describes what happens to a CV you upload today.</p>
+      <p class="fineprint">Nothing on this page is aspirational. It describes what happens to a
+        CV you upload today.</p>
     </div>
 
     <div class="card">
@@ -71,10 +71,17 @@
           application, not by the storage. A leaked storage bucket yields ciphertext.</li>
         <li>The file is <strong>deleted automatically within 24 hours</strong>; what Atsy read about
           its layout goes after 30 days. Both happen on a schedule, not on request.</li>
-        <li>The text pulled out of your CV is <strong>never saved</strong> — not your name, your
-          email, your employers or your bullet points. What is kept is facts <em>about</em> the
-          document: how many columns, which sections were found, whether the dates line up. You see
-          the text itself in your browser, once, and it is not written down anywhere.</li>
+        <li><strong>The text of your CV is never stored as text.</strong> The full extraction —
+          your name, your email, your employers, your bullet points — lives only for the seconds it
+          takes to score, goes to the browser that uploaded it, and is never written down. What is
+          kept is facts <em>about</em> the document: how many columns, which sections were found,
+          whether the dates line up. The one exception is the short quotes in the next point, which
+          are the evidence under each finding.</li>
+        <li><strong>The name you gave the file is kept</strong> with the scan record for 30 days,
+          so you can tell your scans apart in your history. CV filenames very often contain your
+          own name &mdash; <em>priya-raman-cv.pdf</em> &mdash; so if you would rather that were not
+          stored, rename the file before you upload it. The file itself is stored under a random
+          id, never under its name.</li>
         <li>Findings are kept with <strong>short quotes capped at 120 characters</strong>, so a
           fix can point at what it refers to, and with the <strong>rectangle</strong> on the page
           the finding is about &mdash; four numbers, no text. That is what lets the X-ray mark your
@@ -89,6 +96,38 @@
           never uses AI.</li>
         <li><strong>Delete everything</strong> in your account, any time, immediately.</li>
       </ul>
+    </div>
+
+    <div class="card">
+      <h2 class="cardtitle">Where your data physically sits</h2>
+      <p>Atsy runs entirely on Cloudflare. There is no second host, no backup service and no
+        analytics platform — the list below is the whole of it.</p>
+      <ul class="tightlist">
+        <li><strong>Your account row, your scan records and their findings</strong> are in a
+          Cloudflare D1 database called <code>atsy-db</code>.</li>
+        <li><strong>Your encrypted CV</strong> is in a Cloudflare R2 bucket called
+          <code>atsy-cv</code>, stored under a random id with no filename and no user id attached
+          to the object.</li>
+        <li>Both sit in Cloudflare's <strong>ENAM region — eastern North America</strong>.
+          Cloudflare does not publish which building. Read replication is switched off, so there
+          is no second copy of the database in another region.</li>
+        <li>Neither is pinned to a UK or EU jurisdiction. <strong>If you are in the UK or the EU,
+          your data is transferred to North America to be stored</strong> — a transfer under the
+          GDPR, and worth knowing before you upload.</li>
+        <li>The code itself runs at Cloudflare's edge, in whichever data centre is nearest you. Your
+          upload travels from you to that edge and is <strong>encrypted there, inside the
+          application</strong>, before it is written to storage in ENAM.</li>
+        <li>Sign-in codes are sent through <strong>Cloudflare Email Service</strong>. Once the
+          message leaves, it is with your own mail provider, which Atsy does not control.</li>
+        <li>If you ask for an AI rewrite, the redacted bullet goes to <strong>Cloudflare Workers
+          AI</strong>. Atsy does not pin a region for that one, so it is processed wherever
+          Cloudflare runs the model. It carries no name, email, phone, link or employer.</li>
+        <li>The copy of each Atsy email that goes to the person who runs it lands in an ordinary
+          hosted mailbox, which is outside the Cloudflare storage described above.</li>
+      </ul>
+      <p class="fineprint">These two regions are read back from Cloudflare on every deploy and
+        checked against this page. If either ever moved and this paragraph were not updated, the
+        deploy would fail rather than leave you reading something untrue.</p>
     </div>
 
     <div class="card">
@@ -108,10 +147,10 @@
     <div class="card">
       <h2 class="cardtitle">Your rights, and how to use them</h2>
       <p>Atsy is run from New Zealand under the Privacy Act 2020, and follows the GDPR standard for
-        anyone in the UK or EU. You can see everything held about you (the app is that view),
-        correct it by signing in again with the right address, take it with you by downloading your
-        report, and erase it in one click from your account screen. Erasure is immediate and
-        irreversible.</p>
+        anyone in the UK or EU — including for the transfer to North America described above. You
+        can see everything held about you (the app is that view), correct it by signing in again
+        with the right address, take it with you by downloading your report, and erase it in one
+        click from your account screen. Erasure is immediate and irreversible.</p>
       <p class="fineprint">Questions, or something you think is wrong here: reply to any Atsy email
         and it reaches a person.</p>
     </div>
@@ -120,7 +159,7 @@
 
 <footer class="foot">
   <div class="wrap">
-    <span>Atsy &middot; free CV scanner &middot; <span id="version">v1.1.0</span></span>
+    <span>Atsy &middot; free CV scanner &middot; <span id="version">v1.1.1</span></span>
     <nav class="footnav" aria-label="More from Atsy">
       <a href="/">Home</a>
       <a href="/about">How it works</a>

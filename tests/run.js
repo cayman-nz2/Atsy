@@ -510,6 +510,43 @@ await test('the only third-party origin any script can reach is Turnstile', () =
   }
 });
 
+await test('the privacy page says where the data physically is', () => {
+  // "Encrypted and deleted in 24 hours" is not an answer to "where is my CV".
+  // A reader in the EU needs to know it leaves the EU, and a page that only
+  // talks about encryption lets them assume it does not.
+  const page = read('public/privacy.html');
+
+  assert.match(page, /ENAM/, 'the page names no storage region');
+  assert.match(page, /atsy-db/, 'the page does not name the database its rows are in');
+  assert.match(page, /atsy-cv/, 'the page does not name the bucket the CV is in');
+  assert.match(page, /transferred to North America/i,
+    'the page does not tell a UK or EU reader their data leaves the UK or EU');
+
+  // The claim the deploy asserts against Cloudflare has to be a single region,
+  // or the assertion has nothing definite to compare with.
+  const regions = [...new Set(page.match(/\b(ENAM|WNAM|WEUR|EEUR|APAC|OC)\b/g) || [])];
+  assert.equal(regions.length, 1,
+    `the page names ${regions.length} regions (${regions.join(', ')}); the deploy check compares one`);
+});
+
+await test('the privacy page does not claim scoring is still unbuilt', () => {
+  // It said "scoring is not live yet" for four releases after scoring shipped.
+  // A privacy page that is out of date about the product is out of date about
+  // what the product stores.
+  const page = read('public/privacy.html');
+  assert.doesNotMatch(page, /not live yet|scoring is not live/i,
+    'the privacy page still describes scoring as unbuilt');
+});
+
+await test('the privacy page admits the filename is stored', () => {
+  // The page says the text pulled out of a CV is never saved. The file's own
+  // name is saved, for 30 days, and it usually contains the reader's name —
+  // so the page has to say so rather than let "not your name" cover it.
+  const page = read('public/privacy.html');
+  assert.match(page, /name you gave the file is kept/i,
+    'the page does not disclose that the filename is stored');
+});
+
 await test('PDF.js is vendored, complete, and version-matched', () => {
   // The X-ray draws somebody's CV. A renderer fetched from a CDN is a renderer
   // that can stop existing, change under us, or watch who opens it — the same
