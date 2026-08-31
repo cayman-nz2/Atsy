@@ -163,9 +163,17 @@ jobs:
         if: steps.creds.outputs.ready == 'yes' && steps.db.outputs.ready == 'yes'
         run: |
           expected=$(grep -o "'[0-9][0-9.]*'" src/version.js | tr -d "'")
+          # Without this, a grep that stops matching would leave `expected`
+          # empty, an unreachable site would leave `live` empty, and the
+          # comparison would pass: a green deploy proving nothing.
+          if [ -z "$expected" ]; then
+            echo "::error::could not read VERSION out of src/version.js"; exit 1
+          fi
           for i in 1 2 3 4 5 6; do
             live=$(curl -fsS https://atsy.vibecod3.app/api/health | grep -o '"version":"[^"]*"' | cut -d'"' -f4 || true)
-            if [ "$live" = "$expected" ]; then echo "live version $live matches"; exit 0; fi
-            echo "attempt $i: live=$live expected=$expected — retrying"; sleep 10
+            if [ -n "$live" ] && [ "$live" = "$expected" ]; then
+              echo "live version $live matches"; exit 0
+            fi
+            echo "attempt $i: live='${live}' expected='${expected}' — retrying"; sleep 10
           done
-          echo "::error::the deployed version never matched (wanted $expected, saw $live)"; exit 1
+          echo "::error::the deployed version never matched (wanted $expected, saw '${live}')"; exit 1
