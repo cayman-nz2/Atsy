@@ -3,4 +3,4 @@
 // newest RELEASES entry in src/report.js matches it.
 // NOTE: never re-export this from worker.js — workerd rejects non-handler
 // exports on the entry module (Pricey incident #14).
-export const VERSION = '0.4.0';
+export const VERSION = '0.4.1';

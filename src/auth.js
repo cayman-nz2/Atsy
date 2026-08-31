@@ -25,12 +25,18 @@ export async function verifyTurnstile(env, token, ip) {
   // Local dev and E2E only, passed with `wrangler dev --var`. It must never
   // appear in wrangler.jsonc.
   if (env.TURNSTILE_BYPASS === '1') return true;
+
   if (!env.TURNSTILE_SECRET_KEY) {
-    // The dummy key always passes, so in production this means the bot shield
-    // is OFF. Say so loudly rather than failing quietly.
-    console.log('WARNING: TURNSTILE_SECRET_KEY unset — the bot shield is pass-through');
+    // No secret means the bot shield is knowingly off. Calling siteverify with
+    // Cloudflare's always-pass test secret looks harmless but is not: an empty
+    // token still comes back `missing-input-response`, so an unconfigured
+    // shield blocked every sign-in — failing closed for a reason that has
+    // nothing to do with bots. Skip the check and say so.
+    console.log('WARNING: TURNSTILE_SECRET_KEY unset — the bot shield is off; rate limits still apply');
+    return true;
   }
-  const secret = env.TURNSTILE_SECRET_KEY || '1x0000000000000000000000000000000AA';
+
+  const secret = env.TURNSTILE_SECRET_KEY;
   const body = new FormData();
   body.set('secret', secret);
   body.set('response', token || '');

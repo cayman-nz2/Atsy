@@ -54,7 +54,7 @@
 
   var MESSAGES = {
     invalid_email: 'That does not look like an email address.',
-    turnstile_failed: 'The browser check did not pass. Try once more.',
+    turnstile_failed: 'The browser check could not complete. Reload the page and try again.',
     too_many_requests: 'That is a lot of codes. Wait an hour and try again.',
     email_unavailable: 'We could not send the email just now. Try again in a moment.',
     invalid_request: 'Enter the six digits from the email.',

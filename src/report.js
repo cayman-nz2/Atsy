@@ -3,6 +3,13 @@
 // RELEASES[0].version === VERSION — bump both together, every release.
 export const RELEASES = [
   {
+    version: '0.4.1',
+    date: '2026-08-31',
+    notes: [
+      'Fixed sign-in being refused with "the browser check did not pass" — the page was blocking the bot check from reaching its own servers.',
+    ],
+  },
+  {
     version: '0.4.0',
     date: '2026-08-31',
     notes: [

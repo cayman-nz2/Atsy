@@ -5,6 +5,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { VERSION } from '../src/version.js';
 import { sendEmail, maskCode } from '../src/notify.js';
+import { verifyTurnstile } from '../src/auth.js';
 import { extractDocument, UnreadablePdf } from '../src/extract/pdf.js';
 import { analyseLayout } from '../src/extract/layout.js';
 import { detectSections } from '../src/extract/sections.js';
@@ -208,6 +209,53 @@ await test('the rubric is published on the site, in full', () => {
   }
   assert.ok(checks.length >= 45, `only ${checks.length} checks are published`);
   assert.equal(new Set(checks).size, checks.length, 'a check id is listed twice');
+});
+
+/* ---------------- bot shield ---------------- */
+
+await test('an unconfigured bot shield lets people in rather than locking them out', async () => {
+  // With no secret the shield is knowingly off. Calling siteverify with
+  // Cloudflare's always-pass test secret looks harmless, but an empty token
+  // still returns missing-input-response — so an unconfigured shield blocked
+  // every sign-in on the live site for a reason that had nothing to do with
+  // bots. Rate limits are what protect the endpoint in this state.
+  let called = false;
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => { called = true; return new Response('{}'); };
+  try {
+    assert.equal(await verifyTurnstile({}, '', '203.0.113.1'), true);
+    assert.equal(called, false, 'it must not even call siteverify without a secret');
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+await test('a configured bot shield refuses a request with no token', async () => {
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    success: false, 'error-codes': ['missing-input-response'],
+  }));
+  try {
+    assert.equal(await verifyTurnstile({ TURNSTILE_SECRET_KEY: 'real-secret' }, '', null), false);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+await test('the local bypass works only through a dev flag', async () => {
+  assert.equal(await verifyTurnstile({ TURNSTILE_BYPASS: '1' }, '', null), true);
+});
+
+await test('the sign-in page lets Turnstile reach its own servers', () => {
+  // script-src and frame-src alone are not enough: the widget makes its own
+  // network calls, and connect-src 'self' silently stopped them, so no token
+  // was ever produced and every sign-in was refused.
+  const headers = read('public/_headers');
+  const appRule = headers.split('/app.html')[1] || headers.split('/app')[1];
+  const csp = appRule.split('\n').find((line) => line.includes('Content-Security-Policy'));
+  const connect = csp.match(/connect-src ([^;]+)/)[1];
+  assert.ok(connect.includes('https://challenges.cloudflare.com'),
+    `the sign-in CSP blocks Turnstile's own requests: connect-src ${connect}`);
 });
 
 /* ---------------- outbound email ---------------- */
