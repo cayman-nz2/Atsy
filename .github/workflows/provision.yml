@@ -31,6 +31,7 @@ jobs:
 
       - name: D1 database
         run: |
+          set -o pipefail
           echo "::group::create atsy-db"
           npx wrangler@4 d1 create atsy-db 2>&1 | tee d1.log || \
             echo "already exists, or the token lacks D1 edit"
@@ -50,6 +51,11 @@ jobs:
 
       - name: R2 bucket
         run: |
+          # pipefail, because `cmd | tee` reports tee's exit status: without it
+          # a failed creation was reported as "atsy-cv is ready" and the real
+          # error was never read. A provisioning step that lies about its
+          # result is worse than one that fails.
+          set -o pipefail
           if npx wrangler@4 r2 bucket create atsy-cv 2>&1 | tee r2.log; then
             echo "atsy-cv is ready"
           elif grep -q "10042" r2.log; then

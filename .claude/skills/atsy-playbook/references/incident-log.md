@@ -229,3 +229,14 @@ Atsy's own incidents start at #36.
     an export named 'VERSION'`), but the second time is the point: an
     unremarkable slip repeated is a habit. → Edit files by reading fully into a
     variable first, then writing. Never nest a read inside the write call.
+
+48. **A provisioning step reported success on a failure.** `npx wrangler r2
+    bucket create … | tee r2.log` exits with *tee's* status, not wrangler's, so
+    a run that failed with "Please enable R2 through the Cloudflare Dashboard"
+    printed "atsy-cv is ready" and skipped the branch written to explain that
+    exact error. The truth was only two lines above it in the log. → Any
+    pipeline whose exit status is checked needs `set -o pipefail`. More
+    generally: a step that reports its own result must be tested against a
+    failing case, or it is only tested against the happy path — the same shape
+    as the deploy check that would have passed on two empty strings (#47's
+    neighbour in this log).
