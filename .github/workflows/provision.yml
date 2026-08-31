@@ -70,7 +70,31 @@ jobs:
       - name: Turnstile widget
         run: |
           api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/challenges/widgets"
+
+          # Report what the token can and cannot do, separately. Without this
+          # a read failure and a write failure look identical from the log,
+          # and the fix for each is different.
           existing=$(curl -sS -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" "$api" || echo '{}')
+          node -e "
+            let data = {};
+            try { data = JSON.parse(process.argv[1]); } catch {}
+            if (data.success) {
+              console.log('token can list Turnstile widgets: ' + (data.result || []).length + ' found');
+            } else {
+              console.log('token CANNOT list Turnstile widgets: ' + JSON.stringify(data.errors || data));
+            }
+          " "$existing"
+
+          # What the token is actually allowed to do, in Cloudflare's own words.
+          curl -sS -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            "https://api.cloudflare.com/client/v4/user/tokens/verify" > verify.json || true
+          node -e "
+            const fs = require('fs');
+            let data = {};
+            try { data = JSON.parse(fs.readFileSync('verify.json', 'utf8')); } catch {}
+            console.log('token status: ' + JSON.stringify((data.result || {}).status || data.errors || 'unknown'));
+          "
+
           sitekey=$(node -e "
             let data = {};
             try { data = JSON.parse(process.argv[1]); } catch {}
