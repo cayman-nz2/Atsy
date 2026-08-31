@@ -602,6 +602,13 @@ select.input { appearance: none; background-image: none; }
 /* ---------- app screens (sign in, account) ---------- */
 .screenwrap { padding: var(--s7) 0 var(--s8); }
 .prose { max-width: 44rem; }
+/* Binding and resource names on /privacy. A reader can paste one into their own
+   Cloudflare dashboard, so it is set as a literal rather than as prose. */
+.prose code {
+  font-family: var(--mono); font-size: .9em;
+  background: var(--paper-2); border: 1px solid var(--edge); border-radius: 4px;
+  padding: 1px 5px; overflow-wrap: anywhere;
+}
 .prose .card { margin-bottom: var(--s4); gap: var(--s3); }
 .prose .card p { color: var(--ink-2); font-size: 15.5px; }
 .screen { display: flex; flex-direction: column; gap: var(--s3); max-width: 34rem; }

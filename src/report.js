@@ -3,6 +3,17 @@
 // RELEASES[0].version === VERSION — bump both together, every release.
 export const RELEASES = [
   {
+    version: '1.1.1',
+    date: '2026-08-31',
+    notes: [
+      'The privacy page now says where your data physically is: a Cloudflare D1 database and R2 bucket, both in Cloudflare\u2019s ENAM region \u2014 eastern North America \u2014 with no second copy elsewhere.',
+      'If you are in the UK or the EU, that means your data is transferred out of the UK or EU to be stored. The page says so plainly now instead of only talking about encryption.',
+      'It also admits that the name you gave your file is kept for 30 days, and that CV filenames usually contain your own name. Rename the file first if you would rather it were not.',
+      'Both regions are read back from Cloudflare on every deploy and checked against the page, so it cannot quietly go out of date.',
+      'Removed a line that still claimed scoring was not built yet. It shipped four releases ago.',
+    ],
+  },
+  {
     version: '1.1.0',
     date: '2026-08-31',
     notes: [

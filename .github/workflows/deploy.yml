@@ -244,6 +244,59 @@ jobs:
 
       # A green deploy serving the wrong build is worse than a red one:
       # poll /api/health until the live version matches this checkout.
+      # /privacy names the region a reader's CV and account row sit in. That is
+      # a promise about somebody's personal data, so it is asserted rather than
+      # trusted: if the bucket or the database is ever recreated somewhere else,
+      # this fails and the page never gets to quietly say the wrong country.
+      #
+      # A failure here does NOT mean the deploy was bad — the Worker is already
+      # live by this point. It means the privacy page needs correcting, which is
+      # the more urgent of the two.
+      - name: The privacy page's storage regions still match reality
+        if: steps.creds.outputs.ready == 'yes'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -o pipefail
+          claimed=$(grep -o 'ENAM' public/privacy.html | head -1)
+          if [ -z "$claimed" ]; then
+            echo "::error::/privacy no longer names a storage region — it must say where the data is"
+            exit 1
+          fi
+
+          read_region() {
+            curl -sS -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+              "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/$1" \
+              | node -e "
+                let raw = '';
+                process.stdin.on('data', (c) => { raw += c; });
+                process.stdin.on('end', () => {
+                  try {
+                    const r = (JSON.parse(raw).result) || {};
+                    console.log(r.location || r.running_in_region || '');
+                  } catch { console.log(''); }
+                });
+              "
+          }
+
+          bucket=$(read_region "r2/buckets/atsy-cv")
+          database=$(read_region "d1/database/53cd59e3-1822-4b78-b2d6-cabbadeaba8d")
+
+          # An unreachable API leaves both empty, and two empty strings must not
+          # read as agreement — that is how a check proves nothing.
+          if [ -z "$bucket" ] || [ -z "$database" ]; then
+            echo "::warning::could not read the storage regions from Cloudflare (bucket='${bucket}' database='${database}') — not treating that as a mismatch"
+            exit 0
+          fi
+
+          echo "page claims ${claimed}; R2 is ${bucket}; D1 is ${database}"
+          if [ "$bucket" != "$claimed" ] || [ "$database" != "$claimed" ]; then
+            echo "::error::/privacy says data is stored in ${claimed}, but R2 is in ${bucket} and D1 is in ${database}. Correct the privacy page."
+            exit 1
+          fi
+          echo "the privacy page and Cloudflare agree"
+
       - name: Verify the deployed version
         if: steps.creds.outputs.ready == 'yes' && steps.db.outputs.ready == 'yes'
         run: |
