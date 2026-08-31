@@ -1,0 +1,73 @@
+# Where Atsy's data physically lives, read from Cloudflare rather than assumed.
+#
+# /privacy tells people which country their CV and their account row sit in.
+# That is a promise, and a promise nobody can check is just a sentence — so
+# this workflow asks Cloudflare directly and prints the answer.
+#
+# Read-only. It creates nothing, changes nothing, and prints no secret: a
+# bucket's region and a database's region are not confidential, and the
+# database id it echoes is already public in wrangler.jsonc.
+#
+# Run it by hand whenever the claim on /privacy needs re-checking, or after
+# any change to where a binding points. `deploy.yml` asserts the same values
+# on every merge; this is the workflow that tells you what to put there.
+name: Report where the data is stored
+
+on:
+  workflow_dispatch:
+
+jobs:
+  locate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: R2 bucket — where the encrypted CV bytes sit
+        run: |
+          echo "::group::wrangler r2 bucket info atsy-cv"
+          npx wrangler@4.118.0 r2 bucket info atsy-cv || \
+            echo "::warning::could not read the bucket's location"
+          echo "::endgroup::"
+
+      - name: D1 database — where the account rows and findings sit
+        run: |
+          echo "::group::wrangler d1 info atsy-db"
+          npx wrangler@4.118.0 d1 info atsy-db || \
+            echo "::warning::could not read the database's region"
+          echo "::endgroup::"
+
+      # The REST forms carry fields the CLI summary leaves out — R2's
+      # `location` and D1's `running_in_region` are the two the privacy page
+      # actually quotes.
+      - name: The same two, straight from the API
+        run: |
+          set -o pipefail
+          for path in \
+            "r2/buckets/atsy-cv" \
+            "d1/database/53cd59e3-1822-4b78-b2d6-cabbadeaba8d"; do
+            echo "::group::GET /accounts/*/${path}"
+            curl -sS -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+              "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/${path}" \
+              | node -e "
+                let raw = '';
+                process.stdin.on('data', (chunk) => { raw += chunk; });
+                process.stdin.on('end', () => {
+                  try {
+                    const body = JSON.parse(raw);
+                    // Print the result only. The envelope can carry account
+                    // identifiers, and this log is readable by anyone who can
+                    // see the run.
+                    console.log(JSON.stringify(body.result || body.errors, null, 2));
+                  } catch { console.log('could not parse the response'); }
+                });
+              " || echo "::warning::request failed"
+            echo "::endgroup::"
+          done
