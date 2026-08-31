@@ -169,7 +169,7 @@ test.describe('accessibility', () => {
   });
 
   test('the page survives being zoomed to 200% without losing content', async ({ page }) => {
-    // WCAG 1.4.4. Emulated by halving the viewport, which is what 200% zoom
+    // WCAG 1.4.10. Emulated by halving the viewport, which is what 200% zoom
     // does to the layout.
     await page.setViewportSize({ width: 215, height: 466 });
     for (const path of PAGES) {
@@ -178,5 +178,38 @@ test.describe('accessibility', () => {
         document.documentElement.scrollWidth - document.documentElement.clientWidth);
       expect(overflow, `${path} scrolls sideways at 200% zoom`).toBeLessThanOrEqual(1);
     }
+  });
+
+  test('the results screen survives 200% zoom too', async ({ page }) => {
+    // The four pages above are the ones a URL can reach, so they were the only
+    // ones this suite checked — and the results screen, which is the whole
+    // product and exists only after a scan, went unmeasured. It was overflowing
+    // by 26px the entire time: the engine cards are grid items, a grid item's
+    // min-width defaults to auto, and "Greenhouse" beside "medium risk" is
+    // wider than the column at this size.
+    await page.goto('/app');
+    await page.getByLabel('Email address').fill(address('a11y-zoom'));
+    const codeRequest = page.waitForResponse((r) => r.url().includes('/api/auth/request-code'));
+    await page.getByRole('button', { name: 'Email me a code' }).click();
+    const { debug_code: code } = await (await codeRequest).json();
+    await page.getByLabel('Six-digit code').fill(code);
+    await page.setInputFiles('#file', {
+      name: 'cv.pdf', mimeType: 'application/pdf', buffer: Buffer.from(fixture('twoColumn')),
+    });
+    await page.getByRole('button', { name: 'Scan this CV' }).click();
+    await expect(page.locator('#screen-result')).toBeVisible();
+
+    await page.setViewportSize({ width: 215, height: 466 });
+    const overflow = await page.evaluate(() =>
+      document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    expect(overflow, 'the results screen scrolls sideways at 200% zoom').toBeLessThanOrEqual(1);
+
+    // Every fold on it, opened, is also part of the screen.
+    for (const fold of await page.locator('#screen-result details').all()) {
+      await fold.locator('summary').click();
+    }
+    const opened = await page.evaluate(() =>
+      document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    expect(opened, 'an opened fold scrolls the results screen sideways').toBeLessThanOrEqual(1);
   });
 });

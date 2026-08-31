@@ -2,6 +2,8 @@
 // positioned text items from src/extract/pdf.js, work out how the page is put
 // together and where that will hurt a parser.
 
+import { boxOf } from './geometry.js';
+
 const BAND_RATIO = 0.05;        // running heads and feet live in the outer 5%
 const BAND_GAP = 20;            // points of clear space that mark a band off from the body
 // A sidebar gutter in a real CV is 4-8mm, not the 8% of page width an early
@@ -190,6 +192,10 @@ export function detectTable(lines) {
         columns: reference.length,
         columnStarts: reference,
         top: matching[0].top,
+        // The region the table occupies. Returned as a rectangle rather than
+        // as the lines themselves so nothing downstream can accidentally
+        // serialise a table's text by holding on to this object.
+        box: boxOf(matching),
       };
     }
   }
@@ -259,6 +265,10 @@ export function analyseLayout(document) {
 
     return {
       number: page.number,
+      // Carried through so a check that wants a full-width or full-height band
+      // does not have to reach back into the document for the page size.
+      width: page.width,
+      height: page.height,
       lines,
       header: band.header,
       footer: band.footer,

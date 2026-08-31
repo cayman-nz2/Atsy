@@ -229,6 +229,22 @@
         </div>
       </div>
 
+      <details class="fold" id="xray-fold" hidden>
+        <summary class="foldtitle">Your page, with the findings marked on it</summary>
+        <p class="foldnote">Your PDF is drawn here, in this browser, with each finding placed over
+          the part of the page it is about. Select a mark to jump to its fix.</p>
+        <div class="xraybar" id="xray-pager" hidden>
+          <button class="btn btn-quiet btn-small" type="button" id="xray-prev">Previous page</button>
+          <span class="xraycount" id="xray-page">Page 1 of 1</span>
+          <button class="btn btn-quiet btn-small" type="button" id="xray-next">Next page</button>
+        </div>
+        <div class="xraystage" id="xray-stage">
+          <canvas id="xray-canvas"></canvas>
+          <div class="xraymarks" id="xray-marks"></div>
+        </div>
+        <p class="fineprint" id="xray-status" role="status"></p>
+      </details>
+
       <details class="fold">
         <summary class="foldtitle">What the machine actually reads</summary>
         <p class="foldnote">The text in the order the file stores it — not the order you see on the
@@ -263,7 +279,7 @@
 
 <footer class="foot">
   <div class="wrap">
-    <span>Atsy &middot; free CV scanner &middot; <span id="version">v1.0.0</span></span>
+    <span>Atsy &middot; free CV scanner &middot; <span id="version">v1.1.0</span></span>
     <nav class="footnav" aria-label="More from Atsy">
       <a href="/">Home</a>
       <a href="/about">How it works</a>
@@ -273,6 +289,7 @@
 </footer>
 
 <script src="/app.js"></script>
+<script src="/xray.js"></script>
 <script src="/auth.js"></script>
 </body>
 </html>

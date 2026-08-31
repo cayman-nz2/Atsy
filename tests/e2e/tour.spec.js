@@ -93,7 +93,20 @@ test.describe('screenshot tour', () => {
       for (const fold of await page.locator('#screen-result .fold').all()) {
         await fold.evaluate((node) => { node.open = true; });
       }
+      // One of those folds is the X-ray, which fetches PDF.js and renders a
+      // page. Screenshotting before it lands captures an empty frame and the
+      // review passes on a picture of nothing.
+      await expect(page.locator('#xray-stage')).toHaveAttribute('data-rendered', '1',
+        { timeout: 30_000 });
       await page.screenshot({ path: `screenshots/scan-folds-phone-430-${theme}.png`, fullPage: true });
+
+      // The X-ray on its own, close enough to read: this is the one screen
+      // where a mark being a few points out is visible and nothing else would
+      // show it.
+      await page.locator('#xray-fold').scrollIntoViewIfNeeded();
+      await page.locator('#xray-fold').screenshot({
+        path: `screenshots/xray-phone-430-${theme}.png`,
+      });
 
       // Role Fit, with a real job description behind it.
       await page.locator('#jd').fill([

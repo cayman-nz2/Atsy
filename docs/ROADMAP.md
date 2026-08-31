@@ -99,7 +99,7 @@ its own delta. A unit test fails if any check's points differ from what
 `/about` publishes: the rubric is a promise, and an engine scoring by rules the
 page does not list would break it.
 
-## M4 — The results experience — **part shipped v0.7.0; X-ray outstanding**
+## M4 — The results experience — **shipped v0.7.0, completed v1.1.0**
 
 **Ships:** the results screen (score, pillars, segmented navigation), the fix
 list with evidence and point deltas, the client-side X-ray with region
@@ -111,12 +111,17 @@ screens at both device sizes.
 green, the tour screenshots are reviewed for boundaries at 393 and 430 wide in
 light and dark, and p95 upload→results is under 20 s.
 
-*Status:* the results screen, the pillar breakdown, the fix list with evidence
-and point costs, the engine cards, the machine view and the upload states are
-live, as its own sub-screen with working Back navigation. The **client-side
-X-ray** — the original PDF rendered with bounding boxes over each finding — is
-not: it needs a self-hosted PDF.js build vendored into `dist/`, and the machine
-view delivers the same insight without one. It is the last piece of M4.
+*Status:* complete. The results screen, the pillar breakdown, the fix list with
+evidence and point costs, the engine cards, the machine view and the upload
+states shipped in v0.7.0 as their own sub-screen with working Back navigation.
+The **client-side X-ray** shipped in v1.1.0: PDF.js is vendored into
+`public/vendor/pdfjs/` and loaded only when the fold is opened, findings carry
+their region on the page, and each one is drawn over the reader's own PDF as a
+numbered mark that links to its fix.
+
+The estimate that held this back — "two or three findings carry geometry" — was
+wrong. Thirteen checks across the corpus do, so on a typical CV most of the fix
+list can be pointed at.
 
 ## M5 — Role fit and rewrites — **shipped v0.8.0 (2026-08-31)**
 
@@ -170,11 +175,40 @@ focusable thing keeps a visible ring, severity and risk are never carried by
 colour alone, and all four pages reflow at 200% zoom. Three accessibility
 defects were found and fixed doing it (incidents 63-65).
 
-The **client-side X-ray** remains the one deliverable not built: it needs a
-1.7 MB PDF.js build vendored to draw boxes over the two or three findings that
-carry geometry, and the machine view already delivers the insight the landing
-page promises. It is recorded here as a deliberate omission rather than
-forgotten.
+The client-side X-ray was the one deliverable outstanding at v1.0.0, recorded
+here as a deliberate omission rather than forgotten. It shipped in v1.1.0.
+
+## v1.1.0 — The X-ray — **shipped v1.1.0 (2026-08-31)**
+
+**Ships:** finding geometry through the scoring engine, a vendored PDF.js build,
+and the results-screen X-ray — the reader's own PDF rendered in their own
+browser with each finding drawn over the part of the page it is about, numbered
+to match the fix list and linked to it.
+
+**Done when:** a mark lands on the right region of a real CV, the marks survive
+200% zoom, nothing is fetched before the fold is opened, and every way it can
+fail says so rather than showing a blank frame.
+
+*Status:* all four hold in the suite, which asserts the canvas has ink on it
+rather than merely existing. Three defects found doing it: a test that waited on
+a canvas element that is 300x150 before anything is drawn (the incident 58 race
+again); the results screen overflowing sideways by 26px at 200% zoom since
+v1.0.0, because the accessibility suite only ever measured the four screens a
+URL can reach; and bullet findings reporting "page 1" for every bullet, which
+sent anyone with a two-page CV to the wrong page.
+
+Two cases refuse to guess: a page rotated inside the file withholds its marks
+and says why, and a CV needing predefined CJK character maps does not render at
+all, because `cmaps/` is 1.7 MB and deliberately not vendored. The machine view
+covers both.
+
+One gap against the PRD, recorded rather than papered over: **hidden text (P14)
+carries no region.** The operator scan proves invisible runs exist but does not
+record where they are drawn, and the glyph metrics needed to size a box are not
+available at that point. A box guessed onto the most severe finding in the
+rubric would be worse than none, so P14 is reported without a mark. Columns,
+header and footer bands, tables, image and rating regions, and individual
+bullets all carry theirs.
 
 ---
 

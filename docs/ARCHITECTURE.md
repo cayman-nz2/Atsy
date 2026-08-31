@@ -145,10 +145,23 @@ message rather than a timeout. Total target: **p50 ≤ 2 s, p95 ≤ 6 s** of Wor
 time; the request never approaches the 30 s CPU ceiling.
 
 **Client-side X-ray:** the results page renders the original PDF with a
-self-hosted PDF.js build and draws the finding bounding boxes over it. The file
-is fetched once through `GET /api/scans/:id/file` (owner-only, audit-logged,
-decrypted in the Worker, `Cache-Control: no-store`). No canvas rendering
-happens server-side because Workers have no canvas.
+self-hosted PDF.js build (`public/vendor/pdfjs/`) and draws the finding bounding
+boxes over it. The file is fetched once through `GET /api/scans/:id/file`
+(owner-only, audit-logged, decrypted in the Worker, `Cache-Control: no-store`).
+No canvas rendering happens server-side because Workers have no canvas.
+
+The library is 1.7 MB, so it is loaded with a dynamic `import()` the first time
+the fold is opened and never on the path to a score. Findings carry their region
+as `evidence[].box` — `{x, top, width, height}` in PDF points, top-left origin,
+against the page size the model already reports in `pages.sizes`. Boxes are
+geometry and never text, so nothing about the storage rules changes; marks are
+positioned in percentages of the page so they survive any rendered size.
+
+Two cases refuse to guess rather than mislead: a page rotated inside the file
+renders with its axes swapped, so marks are withheld and the reason is shown;
+and a CV using predefined CJK character maps fails to render, because `cmaps/`
+(1.7 MB) is deliberately not vendored. In both, the server-side machine view
+carries the same insight with no renderer at all.
 
 ---
 

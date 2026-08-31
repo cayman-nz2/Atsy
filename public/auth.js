@@ -455,13 +455,18 @@
     });
   }
 
-  function fixCard(finding) {
-      var item = el('li');
-      var head = el('div', 'fixhead');
-      var chip = el('span', 'chip', SEVERITY_WORD[finding.severity] || finding.severity);
-      chip.setAttribute('data-severity', finding.severity);
-      head.appendChild(chip);
-      head.appendChild(el('span', 'fixtitle', finding.title));
+  function fixCard(finding, number) {
+    var item = el('li');
+    // The X-ray marks each finding on the page with this number and links back
+    // to this card, so both have to agree — and the id has to exist even when
+    // the card is inside the folded-away "smaller things" list.
+    item.id = 'fix-' + finding.id;
+    var head = el('div', 'fixhead');
+    if (number) head.appendChild(el('b', 'fixpin', String(number)));
+    var chip = el('span', 'chip', SEVERITY_WORD[finding.severity] || finding.severity);
+    chip.setAttribute('data-severity', finding.severity);
+    head.appendChild(chip);
+    head.appendChild(el('span', 'fixtitle', finding.title));
       head.appendChild(el('span', 'fixcost', finding.fatal
         ? 'caps your score'
         : (finding.points === 1 ? '1 point' : finding.points + ' points')));
@@ -493,13 +498,17 @@
     var worthPoints = result.findings.filter(function (f) { return f.severity !== 'minor'; });
     var polish = result.findings.filter(function (f) { return f.severity === 'minor'; });
 
+    // Numbered across the whole list rather than per fold, so a mark on the
+    // X-ray reading "7" finds card 7 whichever list it ended up in.
+    var numberOf = function (finding) { return result.findings.indexOf(finding) + 1; };
+
     worthPoints.forEach(function (finding) {
-      var card = fixCard(finding);
+      var card = fixCard(finding, numberOf(finding));
       attachRewrite(card, finding);
       list.appendChild(card);
     });
     polish.forEach(function (finding) {
-      var card = fixCard(finding);
+      var card = fixCard(finding, numberOf(finding));
       attachRewrite(card, finding);
       minorList.appendChild(card);
     });
@@ -664,6 +673,17 @@
     var link = document.getElementById('read-download');
     link.href = '/api/scans/' + scan.id + '/file';
     link.hidden = !scan.file_available;
+
+    // The X-ray needs the file itself, so it is offered on exactly the same
+    // terms as the download above: while the stored copy still exists.
+    if (window.AtsyXray) {
+      window.AtsyXray.mount({
+        scanId: scan.id,
+        findings: result.findings,
+        sizes: (scan.model && scan.model.pages && scan.model.pages.sizes) || [],
+        fileAvailable: !!scan.file_available,
+      });
+    }
 
     // The report outlives the file: it is built from the findings, which are
     // kept for 30 days after the PDF is deleted.
