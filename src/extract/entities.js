@@ -1,9 +1,12 @@
 // Entity extraction: the facts a parser tries to pull out of a CV, and the
 // ones Atsy needs in order to say anything useful about the content.
 //
-// Deterministic and dependency-free: regular expressions and small lexicons,
-// never a model. Everything returns evidence (the line it came from) so a
-// finding can always show its working.
+// Deterministic: regular expressions and small lexicons, never a model.
+// Everything returns evidence (the line it came from) so a finding can always
+// show its working, and where the evidence has a place on the page it returns
+// that too.
+
+import { boxOf } from './geometry.js';
 
 const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/;
 // Deliberately permissive on punctuation, then checked by digit count: real
@@ -189,7 +192,15 @@ function continuesPrevious(line, previous) {
  * Wrapped lines are rejoined first, so a "bullet" here is one claim rather
  * than one row of glyphs.
  */
-export function findBullets(sections, roles = []) {
+/**
+ * The experience section's lines, with wrapped continuations folded into the
+ * bullet they belong to.
+ *
+ * Each entry keeps the lines it was built from, so a caller that wants the
+ * region of the page a bullet occupies can have it without re-deriving the
+ * merge — and without the two derivations being able to drift apart.
+ */
+function mergeBulletLines(sections, roles = []) {
   const headings = new Set(roles.map((role) => role.heading).filter(Boolean));
   const lines = sections.sections
     .filter((section) => section.canonical === 'experience')
@@ -201,24 +212,48 @@ export function findBullets(sections, roles = []) {
   for (const line of lines) {
     const isStructure = !!findDateRanges(line.text).length || headings.has(line.text.trim());
     if (isStructure) {
-      merged.push({ ...line, text: line.text.trim(), structure: true });
+      merged.push({ ...line, text: line.text.trim(), structure: true, lines: [line] });
       previous = null;
       continue;
     }
     if (previous && continuesPrevious(line, previous)) {
       previous.text = `${previous.text} ${line.text.trim()}`.replace(/\s+/g, ' ');
+      previous.lines.push(line);
       continue;
     }
-    const entry = { ...line, text: line.text.trim(), structure: false };
+    const entry = { ...line, text: line.text.trim(), structure: false, lines: [line] };
     merged.push(entry);
     previous = entry;
   }
+  return merged;
+}
 
-  return merged
-    .filter((entry) => !entry.structure)
-    .map((entry) => entry.text)
-    .filter((text) => text.length >= 20)
-    .filter((text) => text.split(/\s+/).length >= 4);
+// What counts as a bullet once the lines are merged. Written once so
+// findBullets and bulletRegions cannot disagree about which entries survive.
+const isBullet = (entry) => !entry.structure
+  && entry.text.length >= 20
+  && entry.text.split(/\s+/).length >= 4;
+
+export function findBullets(sections, roles = []) {
+  return mergeBulletLines(sections, roles).filter(isBullet).map((entry) => entry.text);
+}
+
+/**
+ * The same bullets, each with the region of the page it came from.
+ *
+ * Kept as a parallel list rather than folded into `findBullets`, because every
+ * content check reads a bullet as a string and a shape change there would
+ * touch a dozen checks to add something only the X-ray uses. Index i here is
+ * the box for bullet i there — `bulletRegions` and `findBullets` walk the same
+ * entries in the same order, and a test holds them to it.
+ */
+export function bulletRegions(sections, roles = []) {
+  return mergeBulletLines(sections, roles)
+    .filter(isBullet)
+    .map((entry) => {
+      const box = boxOf(entry.lines);
+      return box ? { page: entry.lines[0].page || 1, ...box } : null;
+    });
 }
 
 /** Everything the content checks need, in one pass. */
@@ -226,6 +261,7 @@ export function extractEntities(document, sections) {
   const contact = findContact(document, sections);
   const roles = findRoles(sections);
   const bullets = findBullets(sections, roles);
+  const bulletBoxes = bulletRegions(sections, roles);
 
   const families = [...new Set(roles.map((role) => role.range.family).filter(Boolean))];
   const ordered = roles.every((role, index) => {
@@ -257,6 +293,9 @@ export function extractEntities(document, sections) {
     contact,
     roles,
     bullets,
+    // Index-aligned with `bullets`; an entry is null when the bullet's lines
+    // carried no usable coordinates.
+    bulletBoxes,
     dateFamilies: families,
     mixedDateFormats: families.length > 1,
     reverseChronological: ordered,

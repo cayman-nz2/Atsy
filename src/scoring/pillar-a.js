@@ -13,6 +13,7 @@ import {
   hasEmoji, hasPrivateUse, hasLigatures, hasCidTokens,
   singleCharacterShare, nonLatinShare, bulletGlyph, ratingGlyphRuns,
 } from './text.js';
+import { boxOf, bandDown, bandAcross } from '../extract/geometry.js';
 
 const GENERIC_FILENAMES = [
   /^cv\.pdf$/i, /^resume\.pdf$/i, /^my ?cv/i, /^my ?resume/i,
@@ -75,8 +76,10 @@ export const PILLAR_A = [
         evidence: pages.map((page) => ({
           page: page.number,
           text: `a gutter ${Math.round(page.columns.gutter ? page.columns.gutter.to - page.columns.gutter.from : 0)}pt wide splits this page`,
+          // Drawn the full height of the page, because that is what a gutter
+          // is: a zero-height box would place the finding nowhere.
           box: page.columns.gutter
-            ? { x: page.columns.gutter.from, top: 0, width: page.columns.gutter.to - page.columns.gutter.from, height: 0 }
+            ? bandDown(page.columns.gutter.from, page.columns.gutter.to, page.height)
             : null,
         })),
       };
@@ -116,6 +119,9 @@ export const PILLAR_A = [
         evidence: [{
           page: page ? page.number : 1,
           text: ctx.bandText.slice(0, 100) || 'repeated across every page',
+          // The whole band, not just the words in it: the band is the region a
+          // parser skips, and showing only the text understates the problem.
+          box: page ? bandAcross(page.header.length ? page.header : page.footer, page.width) : null,
         }],
       };
     },
@@ -134,6 +140,7 @@ export const PILLAR_A = [
         evidence: pages.map((page) => ({
           page: page.number,
           text: `${page.table.rows} rows sharing ${page.table.columnStarts.length} column positions`,
+          box: page.table.box || null,
         })),
       };
     },
@@ -195,7 +202,7 @@ export const PILLAR_A = [
       if (!bad.length) return null;
       return {
         message: 'Your bullet characters come from an icon font and extract as junk. Use a plain round or square bullet.',
-        evidence: bad.map((line) => ({ page: line.page, text: line.text })),
+        evidence: bad.map((line) => ({ page: line.page, text: line.text, box: boxOf([line]) })),
       };
     },
   },
@@ -210,7 +217,11 @@ export const PILLAR_A = [
       const line = ctx.bodyLines.find((candidate) => hasEmoji(candidate.text));
       return {
         message: 'Emoji do not survive parsing and read as informal to most reviewers. Remove them.',
-        evidence: [{ page: line ? line.page : 1, text: line ? line.text : '' }],
+        evidence: [{
+          page: line ? line.page : 1,
+          text: line ? line.text : '',
+          box: line ? boxOf([line]) : null,
+        }],
       };
     },
   },
@@ -239,10 +250,9 @@ export const PILLAR_A = [
           : [{
             page: barsNearSkills[0].page,
             text: `${barsNearSkills.length} drawn bars beside the skills section`,
-            box: {
-              x: barsNearSkills[0].x, top: barsNearSkills[0].top,
-              width: barsNearSkills[0].width, height: barsNearSkills[0].height,
-            },
+            // All of them, not the first: the reader is looking for the block
+            // of ratings, not one bar out of five.
+            box: boxOf(barsNearSkills),
           }],
       };
     },

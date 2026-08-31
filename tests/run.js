@@ -502,12 +502,55 @@ await test('the only third-party origin any script can reach is Turnstile', () =
   // Turnstile is the single permitted external embed. Anything else appearing
   // in front-end code is a regression, whoever added it.
   const ALLOWED = new Set(['challenges.cloudflare.com']);
-  for (const file of ['public/app.js', 'public/auth.js']) {
+  for (const file of ['public/app.js', 'public/auth.js', 'public/xray.js']) {
     const origins = [...read(file).matchAll(/https?:\/\/([^/"'\s)]+)/g)].map((match) => match[1]);
     for (const origin of origins) {
       assert.ok(ALLOWED.has(origin), `${file} reaches ${origin}, which is not an allowed origin`);
     }
   }
+});
+
+await test('PDF.js is vendored, complete, and version-matched', () => {
+  // The X-ray draws somebody's CV. A renderer fetched from a CDN is a renderer
+  // that can stop existing, change under us, or watch who opens it — the same
+  // failure mode as the brand font that silently stopped rendering for weeks.
+  const build = 'public/vendor/pdfjs/';
+  for (const [name, floor] of [['pdf.mjs', 200_000], ['pdf.worker.mjs', 800_000]]) {
+    assert.ok(statSync(join(build, name)).size > floor,
+      `${name} is missing or too small to be the real build`);
+  }
+  assert.ok(statSync(join(build, 'LICENSE')).size > 1000, 'the Apache-2.0 licence is not vendored');
+
+  // The library and its worker must come from one version or the worker
+  // refuses to start, and the X-ray fails for everyone at once.
+  const stamped = (file) => (read(join(build, file)).match(/\b(\d+\.\d+\.\d+)\b/) || [])[1];
+  assert.equal(stamped('pdf.mjs'), stamped('pdf.worker.mjs'),
+    'pdf.mjs and pdf.worker.mjs are from different releases of PDF.js');
+  assert.equal(read(join(build, 'VERSION')).trim(), stamped('pdf.mjs'),
+    'VERSION does not match the build that is actually vendored');
+});
+
+await test('the X-ray asks for nothing the app page does not allow', () => {
+  // A URL in xray.js that the page's CSP does not permit is a feature that
+  // works in review and fails silently in production.
+  const script = read('public/xray.js');
+  const urls = [...script.matchAll(/'(\/[^']*)'/g)].map((match) => match[1])
+    .filter((url) => url.startsWith('/vendor') || url.startsWith('/api'));
+  assert.ok(urls.length >= 3, 'expected the library, the worker and the font directory');
+  for (const url of urls) {
+    if (!url.startsWith('/vendor')) continue;
+    const path = join('public', url.replace(/^\//, ''));
+    assert.ok(statSync(path), `${url} is referenced but not vendored`);
+  }
+
+  // The comment above the policy mentions worker-src too, so match the header
+  // itself rather than the first line that happens to contain the word.
+  const policy = read('public/_headers').split('\n')
+    .find((line) => line.includes('Content-Security-Policy') && line.includes('worker-src'));
+  assert.ok(policy, 'the app page allows no worker, so PDF.js cannot start');
+  assert.ok(policy.includes("worker-src 'self'"), 'the PDF.js worker is same-origin');
+  assert.ok(!policy.includes('unsafe-eval'),
+    'the X-ray must not need eval — PDF.js is started with isEvalSupported false');
 });
 
 await test('every self-hosted font referenced by the stylesheet exists', () => {
@@ -2052,6 +2095,81 @@ await test('one reader cannot fetch another reader\'s report', async () => {
   const stranger = testUser(env, 'stranger@example.com');
   const { scan } = await scanOf(env, owner, 'clean');
   assert.equal((await scanReport(new Request('https://atsy.test/'), env, stranger, scan.id)).status, 404);
+});
+
+/* ---------------- finding geometry (the X-ray's input) ---------------- */
+
+await test('every box a finding carries sits inside its own page', async () => {
+  // The X-ray draws these rectangles over the reader's own PDF. A box outside
+  // the page, or with a negative size, would paint a highlight over nothing and
+  // tell somebody their problem is somewhere it is not.
+  let drawn = 0;
+  for (const name of fixtureNames) {
+    const model = await buildModel(fixture(name));
+    const result = await scoreOf(name);
+    const sizes = new Map(model.document.pages.map((page) => [page.number, page]));
+
+    for (const finding of result.findings) {
+      for (const piece of finding.evidence) {
+        if (!piece.box) continue;
+        const page = sizes.get(piece.page);
+        assert.ok(page, `${name}/${finding.id}: a box on page ${piece.page}, which was never read`);
+        const { x, top, width, height } = piece.box;
+        for (const [label, value] of Object.entries({ x, top, width, height })) {
+          assert.ok(Number.isFinite(value), `${name}/${finding.id}: box.${label} is ${value}`);
+        }
+        assert.ok(width > 0 && height > 0,
+          `${name}/${finding.id}: a ${width}x${height} box cannot be drawn`);
+        // One point of slack: a glyph may overhang its own advance width.
+        assert.ok(x >= -1 && top >= -1,
+          `${name}/${finding.id}: box starts off the page at ${x},${top}`);
+        assert.ok(x + width <= page.width + 1 && top + height <= page.height + 1,
+          `${name}/${finding.id}: box runs past the page (${x + width}x${top + height} `
+          + `on a ${page.width}x${page.height} page)`);
+        drawn += 1;
+      }
+    }
+  }
+  // Without this the whole test passes by finding nothing to check, which is
+  // exactly how it would look if geometry stopped being emitted at all.
+  assert.ok(drawn >= 30, `only ${drawn} findings across the corpus carry a region`);
+});
+
+await test('a box locates evidence without repeating it', async () => {
+  // A box is geometry. If one ever carried text it would be a second copy of
+  // the CV in the database, past the 120-character evidence cap and outside
+  // everything the privacy page promises.
+  for (const name of fixtureNames) {
+    const result = await scoreOf(name);
+    for (const finding of result.findings) {
+      for (const piece of finding.evidence) {
+        if (!piece.box) continue;
+        assert.deepEqual(Object.keys(piece.box).sort(), ['height', 'top', 'width', 'x'],
+          `${name}/${finding.id}: a box carries something other than coordinates`);
+      }
+    }
+  }
+});
+
+await test('bullet regions stay aligned with the bullets themselves', async () => {
+  // The two are derived from one merge and read by index. If they ever drift,
+  // every bullet finding would point at the wrong line of somebody's CV.
+  for (const name of fixtureNames) {
+    const model = await buildModel(fixture(name));
+    const { bullets, bulletBoxes } = model.entities;
+    assert.equal(bulletBoxes.length, bullets.length,
+      `${name}: ${bullets.length} bullets but ${bulletBoxes.length} regions`);
+  }
+});
+
+await test('a bullet finding names the page the bullet is actually on', async () => {
+  // Bullet evidence used to say "page 1" unconditionally, which sent a reader
+  // with a two-page CV to the wrong page.
+  const model = await buildModel(fixture('fourPage'));
+  const { bullets, bulletBoxes } = model.entities;
+  const later = bulletBoxes.findIndex((box) => box && box.page > 1);
+  assert.ok(later >= 0, 'the multi-page fixture has no bullet past page 1 to check');
+  assert.ok(bullets[later].length > 0);
 });
 
 /* ---------------- report ---------------- */

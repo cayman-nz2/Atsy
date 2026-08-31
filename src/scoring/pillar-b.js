@@ -5,6 +5,17 @@
 // critical despite being worth two points each.
 
 import { findPlace, looksLikeStreetAddress, findPersonalDetails } from '../lexicons/places.js';
+import { bandAcross } from '../extract/geometry.js';
+
+// The running-head band of page one, edge to edge. Two checks point at it —
+// P04 for anything at all up there, B06 for contact details specifically —
+// and it is the same region in both cases.
+function headerBandBox(ctx) {
+  const page = ctx.layout.pages[0];
+  if (!page) return null;
+  const band = page.header.length ? page.header : page.footer;
+  return bandAcross(band, page.width);
+}
 
 // The identity block: the top fifth of page one, where a name belongs.
 const IDENTITY_BAND = 0.2;
@@ -117,7 +128,11 @@ export const PILLAR_B = [
       if (inBody) return null;
       return {
         message: 'Your contact details are in the page header, where many parsers never look. Move them into the body of the first page.',
-        evidence: [{ page: 1, text: ctx.bandText.slice(0, 100) }],
+        evidence: [{
+          page: 1,
+          text: ctx.bandText.slice(0, 100),
+          box: headerBandBox(ctx),
+        }],
       };
     },
   },

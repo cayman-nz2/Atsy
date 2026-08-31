@@ -183,6 +183,11 @@ a:hover { text-decoration-thickness: 2px; }
 .btn-quiet:hover { border-color: var(--ink-3); }
 .btn[disabled] { opacity: .55; cursor: not-allowed; }
 
+/* A smaller button, for the pager inside a fold where a 48px control would
+   dominate the thing it is paging through. Still 40px, which is above the
+   target-size floor for a control with space around it. */
+.btn-small { min-height: 40px; padding: 9px 16px; font-size: 14px; }
+
 /* ---------- nav ---------- */
 .nav {
   position: sticky; top: 0; z-index: 20;
@@ -402,9 +407,16 @@ a:hover { text-decoration-thickness: 2px; }
   display: grid; gap: 4px;
   border: 1px solid var(--edge); border-radius: var(--r-ctl);
   padding: var(--s3) var(--s4); background: var(--paper-2);
+  /* A grid item defaults to min-width:auto, so its min-content width wins over
+     the track and the card overflows the screen rather than the text wrapping.
+     At 200% zoom "Greenhouse" plus "medium risk" is wider than the column. */
+  min-width: 0;
 }
-.enginehead { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s3); }
-.enginename { font-weight: 600; font-size: 14.5px; color: var(--ink); }
+.enginehead {
+  display: flex; align-items: baseline; justify-content: space-between; gap: var(--s3);
+  flex-wrap: wrap;
+}
+.enginename { font-weight: 600; font-size: 14.5px; color: var(--ink); min-width: 0; }
 .engines p { margin: 0; font-size: 13px; color: var(--ink-2); }
 
 /* Risk bands reuse the severity palette, so "high" means the same thing here
@@ -687,4 +699,80 @@ select.input { appearance: none; background-image: none; }
 /* ---------- motion ---------- */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition-duration: .01ms !important; }
+}
+
+/* ---------- the X-ray ---------- */
+/* The reader's own page with the findings drawn on it. The stage is a
+   positioning context and nothing more; the canvas sets its own height from
+   the page's aspect ratio, and every mark is placed in percentages so the
+   whole thing survives being scaled down to a phone or up to 200% zoom. */
+.xraybar {
+  display: flex; align-items: center; gap: var(--s3); flex-wrap: wrap;
+  margin-bottom: var(--s3);
+}
+.xraycount { font-family: var(--mono); font-size: 12px; color: var(--ink-3); }
+
+.xraystage {
+  position: relative;
+  border: 1px solid var(--edge); border-radius: var(--r-card);
+  background: var(--card);
+  overflow: hidden;
+  /* A CV page is taller than it is wide, so on a narrow screen the stage is
+     the width of the fold and the canvas decides the height. */
+  max-width: 100%;
+}
+.xraystage canvas { display: block; width: 100%; height: auto; }
+
+.xraymarks { position: absolute; inset: 0; }
+
+/* A mark is a button: it is reachable by keyboard, it says what it does, and
+   it moves the reader to the fix. The tint is deliberately light — this is the
+   reader's own CV underneath, and an opaque box would hide the thing being
+   pointed at. */
+.xmark {
+  position: absolute;
+  padding: 0; margin: 0; cursor: pointer;
+  background: color-mix(in srgb, var(--sev-minor) 14%, transparent);
+  border: 2px solid var(--sev-minor);
+  border-radius: 3px;
+  /* A zero-height box would be unclickable; a hairline underline still is not
+     something a finger can hit. */
+  min-height: 14px; min-width: 14px;
+}
+.xmark[data-severity='critical'] {
+  border-color: var(--sev-critical);
+  background: color-mix(in srgb, var(--sev-critical) 14%, transparent);
+}
+.xmark[data-severity='major'] {
+  border-color: var(--sev-major);
+  background: color-mix(in srgb, var(--sev-major) 14%, transparent);
+}
+.xmark:hover { background: color-mix(in srgb, var(--signal) 18%, transparent); }
+
+/* The number, tucked into the mark's top-left corner.
+   It sits INSIDE the box rather than straddling the corner: the stage clips to
+   its rounded border, so a pin hanging outside is cut in half for any finding
+   that touches the top or left edge of the page — which is most of them, since
+   a column gutter runs the full height and a running head starts at y=0. */
+.xpin {
+  position: absolute; top: 0; left: 0;
+  display: flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; border-radius: 50%;
+  font-family: var(--mono); font-size: 11px; font-weight: 700; font-style: normal;
+  background: var(--ink); color: var(--paper);
+  border: 1px solid var(--paper);
+}
+.xmark[data-severity='critical'] .xpin { background: var(--sev-critical); color: #fff; }
+.xmark[data-severity='major'] .xpin { background: var(--sev-major); color: #fff; }
+
+/* The card a mark just sent the reader to. Colour alone would not carry it, so
+   it is an outline as well — the same ring focus uses. */
+.fixes li.is-called {
+  outline: 2px solid var(--signal); outline-offset: 4px; border-radius: var(--r-ctl);
+}
+.fixpin {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; border-radius: 50%; flex: none;
+  font-family: var(--mono); font-size: 11px; font-weight: 700; font-style: normal;
+  background: var(--paper-2); color: var(--ink-2); border: 1px solid var(--edge);
 }

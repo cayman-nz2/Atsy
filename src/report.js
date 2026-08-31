@@ -3,6 +3,16 @@
 // RELEASES[0].version === VERSION — bump both together, every release.
 export const RELEASES = [
   {
+    version: '1.1.0',
+    date: '2026-08-31',
+    notes: [
+      'The X-ray: your own CV drawn on screen with every finding marked on the part of the page it is about, numbered to match the fix list. Select a mark to jump straight to the fix.',
+      'Your PDF is rendered in your browser, not on a server, and only when you open it — nothing about where your file goes has changed.',
+      'Bullet findings now tell you which page the bullet is on. They used to say page 1 for every bullet, which was wrong on any CV longer than one page.',
+      'Fixed the results screen scrolling sideways when the text is enlarged to 200%.',
+    ],
+  },
+  {
     version: '1.0.0',
     date: '2026-08-31',
     notes: [

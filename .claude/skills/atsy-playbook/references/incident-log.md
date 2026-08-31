@@ -464,3 +464,45 @@ Atsy's own incidents start at #36.
     the test exercises a person typing. And the "wait for the render, not the
     response" rule needs applying in every new spec, not just the one where it
     was learned.
+
+66. **The accessibility suite only measured the screens a URL can reach.** The
+    200% zoom gate walked `/`, `/about`, `/privacy` and `/app` and passed. The
+    results screen — the entire product, and the only screen anyone stays on —
+    was never measured, because it exists only after a scan. It had been
+    overflowing 26px sideways since v1.0.0: the engine cards are grid items, a
+    grid item's `min-width` defaults to `auto`, and "Greenhouse" beside
+    "medium risk" is wider than the column at that size. Found only because a
+    new X-ray test at the same width failed and I checked whether my feature
+    was the cause. It was not; the screen was already broken. → `min-width: 0`
+    and `flex-wrap` on the card, and the gate now scans the results screen with
+    its folds open. A coverage list written from the sitemap misses every
+    screen that is a state rather than a URL, and those are the important ones.
+
+67. **A canvas is 300×150 before anything is drawn on it.** The X-ray test
+    waited for `canvas.width * canvas.height` to exceed a threshold, which an
+    untouched canvas already satisfies with its default intrinsic size. Two
+    tests then read a blank frame and reported zero marks, while a third passed
+    because Playwright's locator auto-waiting happened to cover the gap. This
+    is incident 58 for the third time: waiting on something that exists is not
+    waiting on something that is ready. → The renderer stamps
+    `data-rendered="<page>"` on the stage when a page is genuinely on the
+    canvas, and the test waits for that. When a thing has no natural "ready"
+    signal, add one to the product rather than inferring one from a proxy.
+
+68. **"Page 1" for every bullet.** Every bullet-level finding hardcoded
+    `page: 1` in its evidence, so anyone with a two-page CV was sent to the
+    wrong page to find the sentence being criticised. It was invisible for as
+    long as findings were text-only — a page number nobody could check against
+    anything. Building the X-ray made it visible immediately, because a box
+    needs a page to be drawn on. → Bullets now carry their own region, and both
+    the page and the box come from it. A field that is never read is a field
+    that is never right; wiring it to something that renders is what audits it.
+
+69. **An estimate that cost a feature.** v1.0.0 recorded the X-ray as a
+    deliberate omission, reasoning that it needed a 1.7 MB library "to draw
+    boxes over the two or three findings that carry geometry". The real number
+    is thirteen checks across the corpus, which on a normal CV is most of the
+    fix list. The estimate was never measured — it was inferred from the three
+    checks that already happened to emit a box. → Counting it took one script
+    and thirty seconds. A scope decision resting on a number nobody has
+    measured is a guess with a milestone attached to it.

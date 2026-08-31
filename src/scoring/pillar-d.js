@@ -12,6 +12,33 @@ import { verbLemma, verbTense } from '../lexicons/action-verbs.js';
 import { findCliches } from '../lexicons/cliches.js';
 import { SPELLING_VARIANTS, TYPOS, BRAND_CASING, KNOWN_ACRONYMS } from '../lexicons/spelling.js';
 
+/**
+ * Evidence for one bullet: the page it is actually on, and the region it
+ * occupies there.
+ *
+ * Every check here used to report `page: 1` for every bullet, which is simply
+ * wrong on a two-page CV — the reader was sent to the wrong page to find the
+ * thing being complained about. `ctx.bulletBoxes` is index-aligned with
+ * `ctx.bullets`, so the bullet's own position is available and both the page
+ * number and the box come from it.
+ */
+function bulletEvidence(ctx, text, prefix) {
+  const index = ctx.bullets.indexOf(text);
+  const box = index >= 0 ? ctx.bulletBoxes[index] : null;
+  return {
+    page: (box && box.page) || 1,
+    text: prefix ? `${prefix}${text}` : text,
+    box: box ? { x: box.x, top: box.top, width: box.width, height: box.height } : null,
+  };
+}
+
+/** The same, for a check whose evidence is a phrase found inside a bullet. */
+function phraseEvidence(ctx, phrase) {
+  const owner = ctx.bullets.find((bullet) =>
+    bullet.toLowerCase().includes(String(phrase).toLowerCase()));
+  return owner ? bulletEvidence(ctx, owner, null) : { page: 1, text: phrase, box: null };
+}
+
 // Below this many bullets the percentage checks say nothing: two bullets
 // without numbers is not "0% quantified", it is too small a sample to judge.
 const MIN_BULLETS = 4;
@@ -61,7 +88,7 @@ export const PILLAR_D = [
       if (share <= 0.2) return null;
       return {
         message: `${weak.length} of your ${ctx.bullets.length} bullets start with something other than a verb. Start each one with what you did: Led, Built, Reduced, Delivered.`,
-        evidence: weak.slice(0, 3).map((text) => ({ page: 1, text })),
+        evidence: weak.slice(0, 3).map((text) => bulletEvidence(ctx, text)),
       };
     },
   },
@@ -80,7 +107,7 @@ export const PILLAR_D = [
       return {
         message: `Only ${percent}% of your bullets contain a number. Add scale and result: how many, how much, how fast, how much better. This is the single biggest difference between a CV that gets a call and one that does not.`,
         evidence: ctx.bullets.filter((bullet) => !hasQuantifiedOutcome(bullet)).slice(0, 3)
-          .map((text) => ({ page: 1, text })),
+          .map((text) => bulletEvidence(ctx, text)),
       };
     },
   },
@@ -101,10 +128,8 @@ export const PILLAR_D = [
         message: long.length
           ? `${long.length} of your bullets run past 30 words. One idea per bullet, 8 to 30 words — anything longer is read as a paragraph and skimmed.`
           : `${bad.length} of your bullets are shorter than 8 words. A bullet that short cannot carry an action and a result.`,
-        evidence: bad.slice(0, 3).map((bullet) => ({
-          page: 1,
-          text: `${bullet.count} words: ${bullet.text}`,
-        })),
+        evidence: bad.slice(0, 3).map((bullet) =>
+          bulletEvidence(ctx, bullet.text, `${bullet.count} words: `)),
       };
     },
   },
@@ -119,7 +144,7 @@ export const PILLAR_D = [
       if (!inBullets.length) return null;
       return {
         message: 'Drop "I" and "my" — CV bullets are written without pronouns, and removing them buys you room for a number.',
-        evidence: inBullets.slice(0, 3).map((text) => ({ page: 1, text })),
+        evidence: inBullets.slice(0, 3).map((text) => bulletEvidence(ctx, text)),
       };
     },
   },
@@ -134,7 +159,7 @@ export const PILLAR_D = [
       if (!found.length) return null;
       return {
         message: `Replace "${found[0]}" with what you actually did and what changed as a result. Filler phrases take the space a fact would have used.`,
-        evidence: found.slice(0, 4).map((phrase) => ({ page: 1, text: phrase })),
+        evidence: found.slice(0, 4).map((phrase) => phraseEvidence(ctx, phrase)),
       };
     },
   },
@@ -181,7 +206,7 @@ export const PILLAR_D = [
       if (minority < 0.25) return null;
       return {
         message: 'Your bullets mix past and present tense. Past roles in past tense, the current role in present tense — and never both inside one role.',
-        evidence: [past[0], present[0]].map((entry) => ({ page: 1, text: entry.bullet })),
+        evidence: [past[0], present[0]].map((entry) => bulletEvidence(ctx, entry.bullet)),
       };
     },
   },
@@ -240,8 +265,8 @@ export const PILLAR_D = [
       return {
         message: `${stopped.length} of your ${ctx.bullets.length} bullets end with a full stop and the rest do not. Punctuate them all the same way.`,
         evidence: [
-          { page: 1, text: stopped[0] },
-          { page: 1, text: ctx.bullets.find((bullet) => !/[.!?]$/.test(bullet.trim())) || '' },
+          bulletEvidence(ctx, stopped[0]),
+          bulletEvidence(ctx, ctx.bullets.find((bullet) => !/[.!?]$/.test(bullet.trim())) || ''),
         ],
       };
     },

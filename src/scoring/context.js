@@ -94,6 +94,9 @@ export function buildContext(model, options = {}) {
     experienceText: experienceLines.map((line) => line.text).join('\n'),
 
     bullets: entities.bullets,
+    // Index-aligned with `bullets`, so a check that shows bullet i as evidence
+    // can say where on the page bullet i is.
+    bulletBoxes: entities.bulletBoxes || [],
     listedSkills,
     recognisedSkills,
     // Deduplicated canonical names, which is what E03 counts.
