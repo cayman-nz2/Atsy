@@ -120,7 +120,9 @@
         <dl class="reads" id="read-facts"></dl>
         <p class="note" id="read-verdict"></p>
         <div class="quietrow">
-          <a class="btn btn-quiet" id="read-download" href="#" target="_blank" rel="noopener">Open the stored copy</a>
+          <!-- No href until a scan supplies one: an anchor with href="#" is a live
+               link to the top of the page, and fetching it answers 200. -->
+          <a class="btn btn-quiet" id="read-download" target="_blank" rel="noopener">Open the stored copy</a>
           <button class="btn btn-quiet" type="button" id="read-delete">Delete this scan</button>
         </div>
         <p class="fineprint">Scoring — the 49 checks and the fix list — is the next release.

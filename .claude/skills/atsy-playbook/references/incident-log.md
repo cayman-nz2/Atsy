@@ -352,3 +352,22 @@ Atsy's own incidents start at #36.
     release adds a secret, dispatching `provision.yml` is part of shipping it,
     not a follow-up: a manual workflow is a step someone has to remember, which
     means it is a step that will be forgotten.
+
+58. **Two E2E tests raced the UI, and one of them passed for the wrong reason.**
+    The upload helper waited on the `POST /api/scans` *response* and returned —
+    but the submit handler still had to parse the JSON and paint, so tests that
+    read `#read-download`'s href immediately got the markup placeholder instead
+    of the real URL. It passed locally twice and in two CI runs, then failed on a
+    loaded runner during a documentation-only PR.
+    The second half is the more useful lesson. The placeholder was `href="#"`,
+    so the "a signed-out browser cannot read a scan" test fetched `/#` — which
+    resolves to the app page and answers **200**. A test asserting 401 got 200
+    from a URL it never meant to request; with the placeholder removed the same
+    bug reports `null` and `404`, which is unmistakable.
+    → Waiting for a response is not waiting for the render: a helper must await
+    the state its callers actually read (`#card-read` visible and the href
+    matching), never the network event that precedes it. And never leave
+    `href="#"` on an anchor that JavaScript fills in — it is a live link to the
+    current page, so it turns a missing value into a successful request and
+    hides the failure. Reproduced by injecting a 600 ms delay before the render:
+    the old helper fails, the new one passes.

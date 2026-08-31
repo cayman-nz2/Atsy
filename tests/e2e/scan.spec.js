@@ -27,7 +27,22 @@ async function upload(page, name, filename = 'cv.pdf') {
   const scanRequest = page.waitForResponse((response) =>
     response.url().endsWith('/api/scans') && response.request().method() === 'POST');
   await page.getByRole('button', { name: 'Scan this CV' }).click();
-  return (await scanRequest).status();
+  const status = (await scanRequest).status();
+
+  // The response arriving is not the same as the page having rendered it: the
+  // submit handler still has to parse the JSON and paint. Returning on the
+  // response alone let two tests read the result card before it existed — and
+  // one of them passed anyway, because the unrendered href was "#", which
+  // fetches the app page and answers 200. Wait for the outcome the callers
+  // actually depend on.
+  if (status === 201) {
+    await expect(page.locator('#card-read')).toBeVisible();
+    await expect(page.locator('#read-download')).toHaveAttribute(
+      'href', /^\/api\/scans\/[0-9a-f]{32}\/file$/);
+  } else {
+    await expect(page.locator('#upload-error')).toBeVisible();
+  }
+  return status;
 }
 
 test.describe('scanning a CV', () => {
