@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en-NZ">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in — Atsy</title>
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#FAF8F4" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#101116" media="(prefers-color-scheme: dark)">
+<link rel="preload" href="/fonts/bricolage-grotesque-var.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/instrument-sans-var.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/atsy.css">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<nav class="nav">
+  <div class="wrap">
+    <a class="mark" href="/"><i></i>Atsy</a>
+    <div class="navactions">
+      <button class="themebtn" type="button" id="themebtn">Dark</button>
+    </div>
+  </div>
+</nav>
+
+<main id="main" class="screenwrap">
+  <div class="wrap">
+
+    <!-- Step 1: email -->
+    <section class="screen" id="screen-email">
+      <p class="eyebrow">Step 1 of 2</p>
+      <h1 class="screen-title">Sign in to Atsy</h1>
+      <p class="screen-lede">We send a six-digit code. No passwords, and nothing to remember.</p>
+      <form class="form" id="form-email" novalidate>
+        <label class="field">
+          <span class="field-label">Email address</span>
+          <input class="input" type="email" id="email" name="email" autocomplete="email"
+                 inputmode="email" required placeholder="you@example.com">
+        </label>
+        <div id="turnstile-slot" class="turnstile-slot"></div>
+        <p class="formerror" id="email-error" role="alert" hidden></p>
+        <button class="btn btn-primary" type="submit" id="email-submit">Email me a code</button>
+      </form>
+      <p class="fineprint">We store your email address so you can come back to your results, and
+        nothing else about you. <a href="/privacy">What we keep, and for how long</a>.</p>
+    </section>
+
+    <!-- Step 2: code -->
+    <section class="screen" id="screen-code" hidden>
+      <p class="eyebrow">Step 2 of 2</p>
+      <h1 class="screen-title">Enter your code</h1>
+      <p class="screen-lede">We sent a six-digit code to <strong id="code-email"></strong>.
+        It works for ten minutes.</p>
+      <form class="form" id="form-code" novalidate>
+        <label class="field">
+          <span class="field-label">Six-digit code</span>
+          <input class="input input-code" type="text" id="code" name="code" inputmode="numeric"
+                 autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" required
+                 placeholder="000000">
+        </label>
+        <p class="formerror" id="code-error" role="alert" hidden></p>
+        <button class="btn btn-primary" type="submit" id="code-submit">Sign in</button>
+      </form>
+      <div class="quietrow">
+        <button class="linkbtn" type="button" id="resend" disabled>Send another code</button>
+        <button class="linkbtn" type="button" id="change-email">Use a different address</button>
+      </div>
+    </section>
+
+    <!-- Signed in -->
+    <section class="screen" id="screen-account" hidden>
+      <p class="eyebrow">Your account</p>
+      <h1 class="screen-title">You are signed in</h1>
+      <p class="screen-lede">Signed in as <strong id="account-email"></strong>.</p>
+
+      <div class="card">
+        <h2 class="cardtitle">Scanning arrives next</h2>
+        <p>Uploads and scoring are the next release. Nothing about your CV is stored yet, because
+          there is nothing to store — the only thing Atsy holds today is the email address you
+          just used.</p>
+      </div>
+
+      <div class="card">
+        <h2 class="cardtitle">Your data</h2>
+        <ul class="tightlist">
+          <li>Email address — kept until you delete your account</li>
+          <li>Country, from the network request — used for nothing but counting sign-ups</li>
+          <li>No CV, no file, no scan history yet</li>
+        </ul>
+        <p class="fineprint">Deleting is immediate and cannot be undone.</p>
+        <div class="quietrow">
+          <button class="btn btn-quiet" type="button" id="signout">Sign out</button>
+          <button class="btn btn-danger" type="button" id="delete-account">Delete everything</button>
+        </div>
+        <p class="formerror" id="account-error" role="alert" hidden></p>
+      </div>
+    </section>
+
+  </div>
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <span>Atsy &middot; free CV scanner &middot; <span id="version">v0.2.0</span></span>
+    <span><a href="/about">How the score works</a> &middot; <a href="/privacy">Privacy</a></span>
+  </div>
+</footer>
+
+<script src="/app.js"></script>
+<script src="/auth.js"></script>
+</body>
+</html>

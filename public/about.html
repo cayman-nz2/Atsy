@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en-NZ">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How the score works — Atsy</title>
+<meta name="description" content="Atsy's scoring rubric is published: five pillars, deterministic checks, and an honest account of what an ATS score can and cannot tell you.">
+<meta name="theme-color" content="#FAF8F4" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#101116" media="(prefers-color-scheme: dark)">
+<link rel="preload" href="/fonts/instrument-sans-var.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/atsy.css">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<nav class="nav">
+  <div class="wrap">
+    <a class="mark" href="/"><i></i>Atsy</a>
+    <div class="navactions">
+      <button class="themebtn" type="button" id="themebtn">Dark</button>
+      <a class="btn btn-quiet btn-nav" href="/app">Sign in</a>
+    </div>
+  </div>
+</nav>
+
+<main id="main" class="screenwrap">
+  <div class="wrap prose">
+    <p class="eyebrow">How it works</p>
+    <h1 class="screen-title">A score you can argue with</h1>
+    <p class="screen-lede">Atsy's rubric is published in full. You can read every check, see what it
+      is worth, and predict your result before you upload anything.</p>
+
+    <div class="card">
+      <h2 class="cardtitle">Five pillars, 100 points</h2>
+      <ul class="tightlist">
+        <li><strong>Parse and structure — 35.</strong> Can the text be extracted at all, in the
+          right order: columns, reading order, tables, header and footer bands, fonts, bullets.</li>
+        <li><strong>Contact and identity — 10.</strong> Can a recruiter reach you, and is the top of
+          the page clean and free of details you should not be giving away.</li>
+        <li><strong>Experience and dates — 20.</strong> Titles, employers and dates a machine can
+          actually read, in an order it can follow.</li>
+        <li><strong>Content and impact — 25.</strong> Action verbs, quantified results, bullet
+          length, clichés, consistency.</li>
+        <li><strong>Skills presentation — 10.</strong> Whether your skills are findable text rather
+          than pictures.</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h2 class="cardtitle">Two things Atsy will not do</h2>
+      <p><strong>It will not invent a number.</strong> Scoring is deterministic and runs the same
+        published checks every time — no language model is involved, so the same CV always gets the
+        same score. Any figure you see is one Atsy worked out from your own file.</p>
+      <p><strong>It will not pretend to be an ATS.</strong> Every applicant tracking system ships a
+        different parser, most are configured per employer, and none publishes a candidate score.
+        Nobody can tell you "your Workday score" — what Atsy can tell you is how readable your file
+        is, exactly where it breaks, and which engines are most likely to trip on it.</p>
+    </div>
+
+    <div class="card">
+      <h2 class="cardtitle">Read the rubric</h2>
+      <p>The whole specification is public, including every check, its weight, and the message you
+        would see: <a href="https://github.com/cayman-nz2/Atsy/blob/main/docs/SCORING-SPEC.md">the
+        scoring specification on GitHub</a>. If you think a check is wrong, say so — that is the
+        point of publishing it.</p>
+    </div>
+  </div>
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <span>Atsy &middot; free CV scanner &middot; <span id="version">v0.2.0</span></span>
+    <span><a href="/privacy">Privacy</a> &middot; <a href="/">Home</a></span>
+  </div>
+</footer>
+<script src="/app.js"></script>
+</body>
+</html>

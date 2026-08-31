@@ -19,7 +19,11 @@ export default defineConfig({
   },
   webServer: {
     // OTP_ECHO / TURNSTILE_BYPASS live here and ONLY here — never in wrangler.jsonc.
-    command: `npx wrangler dev --port ${PORT} --ip 127.0.0.1 --var OTP_ECHO:1 --var TURNSTILE_BYPASS:1`,
+    // Every request in the suite comes from one address, so the per-IP cap is
+    // raised here — and only here — to keep the suite order-independent. The
+    // per-email cap keeps its production value and is asserted in auth.spec.js.
+    command: `npx wrangler dev --port ${PORT} --ip 127.0.0.1`
+      + ' --var OTP_ECHO:1 --var TURNSTILE_BYPASS:1 --var OTP_MAX_PER_IP_HOUR:500',
     url: `http://127.0.0.1:${PORT}/api/health`,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

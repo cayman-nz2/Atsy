@@ -2,7 +2,7 @@
 // first — never invoke this spec directly, Pricey incident #30).
 // It must show exactly what a user sees: real self-hosted fonts, settled
 // layout, both themes, and the owner's device size.
-import { test } from '@playwright/test';
+import { test, expect } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
 
 // A full-page capture repaints sticky bars over whatever is scrolled under
@@ -25,6 +25,9 @@ const SIZES = [
 ];
 const SCREENS = [
   { name: 'landing', path: '/' },
+  { name: 'signin', path: '/app' },
+  { name: 'about', path: '/about' },
+  { name: 'privacy', path: '/privacy' },
   { name: 'not-found', path: '/no-such-page' },
 ];
 
@@ -48,6 +51,29 @@ test.describe('screenshot tour', () => {
         });
       }
     }
+  }
+
+  // The screens behind the sign-in flow need driving, so they get their own
+  // pass rather than being missed by the review.
+  for (const theme of ['light', 'dark']) {
+    test(`code and account screens · phone-430 · ${theme}`, async ({ page }) => {
+      mkdirSync('screenshots', { recursive: true });
+      await page.setViewportSize({ width: 430, height: 932 });
+      await page.emulateMedia({ colorScheme: theme });
+      await page.goto('/app');
+      await unstick(page);
+
+      await page.getByLabel('Email address').fill(`tour-${Date.now()}@example.test`);
+      const codeRequest = page.waitForResponse((r) => r.url().includes('/api/auth/request-code'));
+      await page.getByRole('button', { name: 'Email me a code' }).click();
+      const { debug_code: code } = await (await codeRequest).json();
+      await expect(page.getByRole('heading', { name: 'Enter your code' })).toBeVisible();
+      await page.screenshot({ path: `screenshots/code-phone-430-${theme}.png`, fullPage: true });
+
+      await page.getByLabel('Six-digit code').fill(code);
+      await expect(page.getByRole('heading', { name: 'You are signed in' })).toBeVisible();
+      await page.screenshot({ path: `screenshots/account-phone-430-${theme}.png`, fullPage: true });
+    });
   }
 
   test('machine view · phone-430 · light', async ({ page }) => {
