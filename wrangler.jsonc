@@ -31,7 +31,12 @@
     // `wrangler dev --var`. They must NEVER appear in this file.
     "ADMIN_EMAILS": "avishkapadia@gmail.com",
     "OWNER_EMAIL": "avishkapadia@gmail.com",
-    "EMAIL_FROM": "hello@vibecod3.app",
+    "EMAIL_FROM": "atsyhello@vibecod3.app",
+    // Every email Atsy sends is copied to the owner and replies come back to
+    // him. The copy is a separate send: the Email Service envelope carries one
+    // recipient, so a Bcc header alone would deliver nothing.
+    "BCC_EMAIL": "avishkapadia@gmail.com",
+    "REPLY_TO_EMAIL": "avishkapadia@gmail.com",
     // Turnstile site keys are public. This is Cloudflare's always-passes test
     // key: replace it with the real key for atsy.vibecod3.app, and add the
     // matching TURNSTILE_SECRET_KEY as a GitHub secret so CI can sync it.

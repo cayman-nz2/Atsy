@@ -9,7 +9,7 @@ import {
   json, err, nowSec, randDigits, randToken, sha256Hex, hashIp,
   getCookie, sessionCookie, validEmail, readJson,
 } from './util.js';
-import { sendEmail, notifyOwner } from './notify.js';
+import { sendEmail, notifyOwner, maskCode } from './notify.js';
 
 const OTP_TTL_SEC = 10 * 60;
 const OTP_MAX_ATTEMPTS = 5;
@@ -91,7 +91,16 @@ export async function requestCode(request, env) {
   if (env.OTP_ECHO === '1') return json({ sent: true, debug_code: code });
 
   try {
-    await sendEmail(env, email, `${code} is your Atsy sign-in code`, signInEmail(code));
+    const body = signInEmail(code);
+    const subject = `${code} is your Atsy sign-in code`;
+    await sendEmail(env, email, subject, body, {
+      // The owner's copy records that a code went out, without carrying the
+      // code itself: a second inbox holding live sign-in codes would let
+      // anyone with access to it sign in as any user. The subject line needs
+      // masking as much as the body does — it starts with the code.
+      copyLines: maskCode(body, code),
+      copySubject: maskCode([subject], code)[0],
+    });
   } catch (error) {
     console.log('sign-in email failed:', error.message);
     return err('email_unavailable', 502);

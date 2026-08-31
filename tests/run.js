@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { VERSION } from '../src/version.js';
+import { sendEmail, maskCode } from '../src/notify.js';
 import { extractDocument, UnreadablePdf } from '../src/extract/pdf.js';
 import { analyseLayout } from '../src/extract/layout.js';
 import { detectSections } from '../src/extract/sections.js';
@@ -171,6 +172,108 @@ await test('readJson returns null for a malformed body instead of throwing', asy
   assert.equal(await readJson(bad), null);
   const good = new Request('https://atsy.test/', { method: 'POST', body: '{"a":1}' });
   assert.deepEqual(await readJson(good), { a: 1 });
+});
+
+await test('no page sends a reader to GitHub, or anywhere else off the site', () => {
+  // Owner rule: the product explains itself. A user chasing a rubric should
+  // never land in a source repository.
+  for (const page of htmlPages) {
+    const links = [...read(page).matchAll(/<a[^>]+href="(https?:\/\/[^"]+)"/g)].map((m) => m[1]);
+    assert.deepEqual(links, [], `${page} links off-site: ${links.join(', ')}`);
+  }
+});
+
+await test('the home page reaches every other page', () => {
+  const home = read('public/index.html');
+  for (const path of ['/about', '/privacy', '/app']) {
+    assert.ok(home.includes(`href="${path}"`), `the home page does not link to ${path}`);
+  }
+});
+
+await test('every page footer carries the navigation, and no infrastructure boast', () => {
+  for (const page of htmlPages) {
+    const body = read(page);
+    assert.ok(body.includes('class="footnav"'), `${page} has no footer navigation`);
+    assert.ok(!/Built on Cloudflare/i.test(body), `${page} still names the host in the footer`);
+  }
+});
+
+await test('the rubric is published on the site, in full', () => {
+  // "Every check is published" is a promise on the home page. This is the
+  // page that has to keep it.
+  const about = read('public/about.html');
+  const checks = [...about.matchAll(/<dt>([A-Z]\d{2})/g)].map((match) => match[1]);
+  for (const prefix of ['P', 'B', 'C', 'D', 'E']) {
+    assert.ok(checks.some((id) => id.startsWith(prefix)), `no ${prefix} checks are published`);
+  }
+  assert.ok(checks.length >= 45, `only ${checks.length} checks are published`);
+  assert.equal(new Set(checks).size, checks.length, 'a check id is listed twice');
+});
+
+/* ---------------- outbound email ---------------- */
+
+// A stand-in for the Email Service binding that records what would be sent.
+function fakeMailer() {
+  const sent = [];
+  return {
+    sent,
+    env: {
+      EMAIL_FROM: 'atsyhello@vibecod3.app',
+      BCC_EMAIL: 'owner@example.com',
+      REPLY_TO_EMAIL: 'owner@example.com',
+      SEND_EMAIL: { sendRaw: (message) => { sent.push(message); return Promise.resolve(); } },
+    },
+  };
+}
+
+await test('every email carries the sender and reply-to the owner set', async () => {
+  const mailer = fakeMailer();
+  await sendEmail(mailer.env, 'user@example.com', 'Subject line', ['Hello.']);
+  for (const message of mailer.sent) {
+    assert.match(message.raw, /From: Atsy <atsyhello@vibecod3\.app>/);
+    assert.match(message.raw, /Reply-To: <owner@example\.com>/);
+  }
+});
+
+await test('the owner is copied on every email, as a real second delivery', async () => {
+  // A Bcc header alone delivers nothing: the Email Service envelope carries
+  // exactly one recipient, so the copy has to be its own send.
+  const mailer = fakeMailer();
+  await sendEmail(mailer.env, 'user@example.com', 'Subject line', ['Hello.']);
+  assert.equal(mailer.sent.length, 2, 'one send to the user, one to the owner');
+  assert.equal(mailer.sent[0].to, 'user@example.com');
+  assert.equal(mailer.sent[1].to, 'owner@example.com');
+  assert.match(mailer.sent[1].raw, /\[copy of an email Atsy sent to user@example\.com\]/);
+});
+
+await test('the owner is not copied twice on an email already addressed to him', async () => {
+  const mailer = fakeMailer();
+  await sendEmail(mailer.env, 'owner@example.com', 'Owner notification', ['Something happened.']);
+  assert.equal(mailer.sent.length, 1);
+});
+
+await test("the owner's copy of a sign-in email never contains the live code", async () => {
+  // Ten minutes of account access for whoever can read that second mailbox,
+  // and a contradiction of the promise on /privacy that nobody at Atsy can
+  // reach a user's data.
+  const mailer = fakeMailer();
+  const code = '482913';
+  const body = [`Your code is: ${code}`, 'It works for 10 minutes.'];
+  const subject = `${code} is your Atsy sign-in code`;
+  await sendEmail(mailer.env, 'user@example.com', subject, body, {
+    copyLines: maskCode(body, code),
+    copySubject: maskCode([subject], code)[0],
+  });
+  const [toUser, toOwner] = mailer.sent;
+  assert.ok(toUser.raw.includes(code), 'the user must still receive their code');
+  // The whole message, headers included: the subject line starts with the code.
+  assert.ok(!toOwner.raw.includes(code), 'no part of the copy may carry the code');
+  assert.ok(toOwner.raw.includes('······'), 'the code should be visibly masked');
+});
+
+await test('masking replaces every occurrence of the code', () => {
+  assert.deepEqual(maskCode(['123456 twice: 123456', 'none here'], '123456'),
+    ['······ twice: ······', 'none here']);
 });
 
 /* ---------------- configuration safety ---------------- */

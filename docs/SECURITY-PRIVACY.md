@@ -118,6 +118,7 @@ Rules:
 | Pasted job descriptions | D1 `job_matches` — **hashed, not stored verbatim**, plus matched/missing term lists | 30 days | One click |
 | IP address | Salted hash only, in rate-limit rows and `audit_log` | 30 days | Purged by cron |
 | Feedback message + email | D1 `feedback` | Until resolved + notified | On request |
+| A copy of every outbound email | The owner's mailbox (`BCC_EMAIL`) | Owner's retention | Not applicable — disclosed on /privacy |
 | AI prompt content | Not stored; redacted before sending | n/a | n/a |
 
 **Purge cron (every 30 minutes)** does, in order, with conditional updates so a
@@ -135,6 +136,23 @@ confirms with a count of what was removed. Deletion is irreversible and the UI
 says so before confirming.
 
 ---
+
+## 4a. Operator copies of outbound email
+
+Every email Atsy sends is copied to the owner (`BCC_EMAIL`) and carries
+`Reply-To: OWNER_EMAIL`, so a user who replies reaches a person. Two details
+make this safe rather than a back door:
+
+- The copy is a **second send**, not a `Bcc:` header: the Email Service
+  envelope carries exactly one recipient, so a header alone delivers nothing.
+- **Sign-in codes are masked in the copy**, subject line included. An
+  unmasked copy would be ten minutes of account access for anyone who could
+  read that mailbox, and would contradict the promise on `/privacy` that
+  nobody at Atsy can reach a user's data. The owner still sees that a code was
+  sent, to whom, and when.
+
+Sends to the owner's verified destination address are free and do not count
+against the 3,000/month included quota.
 
 ## 5. AI redaction
 

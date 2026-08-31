@@ -3,6 +3,15 @@
 // RELEASES[0].version === VERSION — bump both together, every release.
 export const RELEASES = [
   {
+    version: '0.4.0',
+    date: '2026-08-31',
+    notes: [
+      'The full scoring rubric — all 49 checks and what each is worth — is now published on the site itself.',
+      'How it works and Privacy are reachable from the home page and from every footer.',
+      'Emails now come from atsyhello@vibecod3.app, and replies reach a person.',
+    ],
+  },
+  {
     version: '0.3.0',
     date: '2026-08-31',
     notes: [
