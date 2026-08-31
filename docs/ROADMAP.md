@@ -153,7 +153,7 @@ an email, an employer, a filename or a line of CV text. The two email clauses
 are the owner's to confirm in production; everything else is proven by the
 suite.
 
-## M7 — v1.0.0
+## M7 — v1.0.0 — **shipped v1.0.0 (2026-08-31)**
 
 **Ships:** accessibility audit and fixes, performance budget enforcement, copy
 pass, the launch checklist, the release notes entry, and the version bump in
@@ -162,6 +162,19 @@ every display location.
 **Done when:** every acceptance criterion above is true in production, the
 `RELEASES` entry matches `VERSION`, and a fresh phone session completes
 land → sign in → scan → fix → re-scan without a single dead end.
+
+*Status:* the keyboard-only journey runs end to end in the suite — sign in,
+upload, read the score, open a fold, navigate back — with no mouse. Every page
+carries one h1 and an unbroken heading order, every control has a label, every
+focusable thing keeps a visible ring, severity and risk are never carried by
+colour alone, and all four pages reflow at 200% zoom. Three accessibility
+defects were found and fixed doing it (incidents 63-65).
+
+The **client-side X-ray** remains the one deliverable not built: it needs a
+1.7 MB PDF.js build vendored to draw boxes over the two or three findings that
+carry geometry, and the machine view already delivers the insight the landing
+page promises. It is recorded here as a deliberate omission rather than
+forgotten.
 
 ---
 

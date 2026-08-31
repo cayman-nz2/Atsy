@@ -12,6 +12,7 @@ import {
 } from './src/scan.js';
 import { runRetention } from './src/retention.js';
 import { matchScan } from './src/match.js';
+import { scanReport } from './src/report-page.js';
 import { rewriteBullets } from './src/rewrite.js';
 import { submitFeedback, adminStats, adminFeedback, resolveFeedback } from './src/admin.js';
 import { currentUserOrNull } from './src/auth.js';
@@ -65,6 +66,11 @@ export default {
 
     // Scan ids are 32 hex characters. Matching the shape here means a
     // malformed id is a 404 from the router rather than a database round trip.
+    const reportPath = path.match(/^\/api\/scans\/([0-9a-f]{32})\/report$/);
+    if (reportPath && method === 'GET') {
+      return withUser(request, env, (user) => scanReport(request, env, user, reportPath[1]));
+    }
+
     const scanPath = path.match(/^\/api\/scans\/([0-9a-f]{32})(\/file)?$/);
     if (scanPath) {
       const [, scanId, fileSuffix] = scanPath;

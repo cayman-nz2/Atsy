@@ -116,6 +116,7 @@
 
       <div class="card" id="card-history" hidden>
         <h2 class="cardtitle">Your scans</h2>
+        <p class="note" id="history-progress" hidden></p>
         <ul class="tightlist" id="history-list"></ul>
       </div>
 
@@ -249,6 +250,7 @@
           <!-- No href until a scan supplies one: an anchor with href="#" is a live
                link to the top of the page, and fetching it answers 200. -->
           <a class="btn btn-quiet" id="read-download" target="_blank" rel="noopener">Open the stored copy</a>
+          <a class="btn btn-quiet" id="read-report" target="_blank" rel="noopener">Printable report</a>
           <button class="btn btn-quiet" type="button" id="read-delete">Delete this scan</button>
           <button class="btn btn-primary" type="button" id="scan-another">Scan another CV</button>
         </div>
@@ -261,7 +263,7 @@
 
 <footer class="foot">
   <div class="wrap">
-    <span>Atsy &middot; free CV scanner &middot; <span id="version">v0.8.0</span></span>
+    <span>Atsy &middot; free CV scanner &middot; <span id="version">v1.0.0</span></span>
     <nav class="footnav" aria-label="More from Atsy">
       <a href="/">Home</a>
       <a href="/about">How it works</a>

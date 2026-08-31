@@ -193,7 +193,13 @@ a:hover { text-decoration-thickness: 2px; }
 .nav .wrap {
   display: flex; align-items: center; justify-content: space-between;
   gap: var(--s4); min-height: 60px;
+  /* The bar has to survive 200% zoom (WCAG 1.4.10 reflow), where the viewport
+     is effectively ~215px. Without wrapping, the wordmark plus two controls
+     pushed every page 27px sideways — on all four pages at once, because the
+     nav is shared. */
+  flex-wrap: wrap; row-gap: var(--s2); padding-top: 6px; padding-bottom: 6px;
 }
+.navactions { flex-wrap: wrap; }
 .mark {
   display: inline-flex; align-items: center; gap: var(--s2);
   font-family: var(--display); font-weight: 800; font-size: 20px;
@@ -209,6 +215,14 @@ a:hover { text-decoration-thickness: 2px; }
 }
 .themebtn:hover { color: var(--ink); border-color: var(--ink-3); }
 .btn-nav { min-height: 44px; padding: 10px 18px; font-size: 15px; }
+
+/* At the narrowest reflow width the two controls need the room more than the
+   padding does. The 44px touch target is kept — it is the accessible minimum,
+   not a style. */
+@media (max-width: 280px) {
+  .themebtn, .btn-nav { padding-left: 10px; padding-right: 10px; font-size: 13.5px; }
+  .mark { font-size: 17px; }
+}
 
 /* ---------- hero ---------- */
 .hero { padding: var(--s8) 0 var(--s7); }
@@ -486,13 +500,20 @@ select.input { appearance: none; background-image: none; }
   border-bottom: 1px dashed #C9C4BA; padding-bottom: 7px; margin-bottom: 11px;
   color: #5A5E68; font-size: 9.5px;
 }
-.cv h4 { font-size: 19px; letter-spacing: -.02em; color: #15171C; margin-bottom: 2px; }
+/* The name inside the demo CV. It was an <h4>, which put "Priya Raman" into
+   the page's heading outline as if it were a section of the site — a screen
+   reader user navigating by heading landed on a mock document's contents. It
+   is document content, so it is a paragraph. */
+.cv .cvname {
+  font-size: 19px; font-weight: 700; letter-spacing: -.02em;
+  color: #15171C; margin-bottom: 2px;
+}
 .cv .role { font-size: 10px; color: #5A5E68; margin-bottom: 12px; }
 .cv .cols { display: grid; grid-template-columns: .72fr 1.28fr; gap: 16px; }
 @media (max-width: 560px) {
   .cv { font-size: 10px; padding: 16px 12px 16px 34px; }
   .cv .cols { gap: 11px; }
-  .cv h4 { font-size: 17px; }
+  .cv .cvname { font-size: 17px; }
 }
 .cv .lbl {
   font-family: var(--display); font-size: 9.5px; font-weight: 700; letter-spacing: .09em;

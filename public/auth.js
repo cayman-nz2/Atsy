@@ -665,6 +665,10 @@
     link.href = '/api/scans/' + scan.id + '/file';
     link.hidden = !scan.file_available;
 
+    // The report outlives the file: it is built from the findings, which are
+    // kept for 30 days after the PDF is deleted.
+    document.getElementById('read-report').href = '/api/scans/' + scan.id + '/report';
+
     // Role Fit re-reads the CV, so it is only offered while the file exists.
     document.getElementById('match-result').hidden = true;
     document.getElementById('jd').value = '';
@@ -698,11 +702,30 @@
       var open = document.createElement('button');
       open.type = 'button';
       open.className = 'linkbtn';
-      open.textContent = scan.filename + ' — ' + scan.score + '/100 — ' + when;
+      // The delta is the answer to the only question a second scan asks.
+      var move = scan.delta === null || scan.delta === 0
+        ? ''
+        : ' (' + (scan.delta > 0 ? '+' : '') + scan.delta + ')';
+      open.textContent = scan.filename + ' — ' + scan.score + '/100' + move + ' — ' + when;
       open.addEventListener('click', function () { openScan(scan.id); });
       item.appendChild(open);
       list.appendChild(item);
     });
+    var progress = document.getElementById('history-progress');
+    if (result.ok && result.data && result.data.progress) {
+      var p = result.data.progress;
+      progress.textContent = p.change > 0
+        ? 'Across ' + p.scans + ' scans you have gone from ' + p.first + ' to ' + p.latest
+          + ' — up ' + p.change + ' points.'
+        : (p.change < 0
+          ? 'Your latest scan is ' + Math.abs(p.change) + ' points below your first ('
+            + p.first + ' to ' + p.latest + '). Open the two and compare the fix lists.'
+          : 'Across ' + p.scans + ' scans your score has not moved from ' + p.latest + '.');
+      progress.hidden = false;
+    } else {
+      progress.hidden = true;
+    }
+
     card.hidden = scans.length === 0;
   }
 
