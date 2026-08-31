@@ -3,6 +3,14 @@
 // RELEASES[0].version === VERSION — bump both together, every release.
 export const RELEASES = [
   {
+    version: '0.3.0',
+    date: '2026-08-31',
+    notes: [
+      'Sharing a link to Atsy now shows a proper preview card in WhatsApp, Slack and iMessage.',
+      'A real icon set: browser tabs, iOS home screen, and Android install.',
+    ],
+  },
+  {
     version: '0.2.0',
     date: '2026-08-31',
     notes: [

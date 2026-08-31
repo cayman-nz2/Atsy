@@ -240,9 +240,15 @@ await test('no page or stylesheet loads an asset from a third party', () => {
   // the page loads are not.
   for (const file of [...htmlPages, 'public/atsy.css']) {
     const body = read(file);
+    // A <link> only loads something for some values of rel: canonical and
+    // alternate are declarations about the page, not fetches.
+    const loadingLinks = [...body.matchAll(/<link[^>]*>/g)]
+      .map((match) => match[0])
+      .filter((tag) => /href=["']https?:\/\//.test(tag))
+      .filter((tag) => !/rel=["'](canonical|alternate)["']/.test(tag));
     const loaded = [
       ...(body.match(/\ssrc=["']https?:\/\/[^"']+/g) || []),
-      ...(body.match(/<link[^>]+href=["']https?:\/\/[^"']+/g) || []),
+      ...loadingLinks,
       ...(body.match(/url\(["']?https?:\/\/[^)]+/g) || []),
     ];
     assert.deepEqual(loaded, [], `${file} loads an external asset: ${loaded.join(', ')}`);
@@ -306,6 +312,62 @@ await test('no class name is styled by two different components', () => {
   }
   const clashes = [...owners.entries()].filter(([, count]) => count > 1).map(([name]) => `.${name}`);
   assert.deepEqual(clashes, [], `these classes set display in two separate rules: ${clashes.join(', ')}`);
+});
+
+await test('every page carries the link-preview metadata a share needs', () => {
+  // WhatsApp, Slack and iMessage read Open Graph tags, not the favicon: a page
+  // without them shares as a bare grey link.
+  const required = ['og:title', 'og:description', 'og:image', 'og:url', 'og:type', 'og:site_name'];
+  for (const page of htmlPages) {
+    const body = read(page);
+    for (const property of required) {
+      assert.ok(body.includes(`property="${property}"`), `${page} is missing ${property}`);
+    }
+    assert.ok(body.includes('name="twitter:card"'), `${page} is missing the twitter card type`);
+    // Relative image URLs are ignored by most preview crawlers.
+    const image = body.match(/property="og:image" content="([^"]+)"/)[1];
+    assert.ok(image.startsWith('https://'), `${page} has a relative og:image (${image})`);
+    const url = body.match(/property="og:url" content="([^"]+)"/)[1];
+    assert.ok(url.startsWith('https://atsy.vibecod3.app'), `${page} has a wrong og:url (${url})`);
+    assert.ok(body.includes('rel="canonical"'), `${page} has no canonical URL`);
+  }
+});
+
+await test('every icon and preview image referenced by a page exists and is a real image', () => {
+  const referenced = new Set();
+  for (const page of htmlPages) {
+    const body = read(page);
+    for (const match of body.matchAll(/(?:href|content)="(\/[^"]+\.(?:png|svg|webmanifest))"/g)) {
+      referenced.add(match[1]);
+    }
+    for (const match of body.matchAll(/content="https:\/\/atsy\.vibecod3\.app(\/[^"]+\.png)"/g)) {
+      referenced.add(match[1]);
+    }
+  }
+  assert.ok(referenced.has('/og-image.png'), 'the share card must be referenced');
+  assert.ok(referenced.has('/apple-touch-icon.png'), 'iOS needs a touch icon');
+  for (const asset of referenced) {
+    const stats = statSync(join('public', asset.slice(1)));
+    assert.ok(stats.size > 200, `${asset} is missing or empty`);
+  }
+});
+
+await test('the share card is the size preview crawlers expect, and small enough to fetch', () => {
+  const declared = read('public/index.html');
+  assert.ok(declared.includes('content="1200"') && declared.includes('content="630"'),
+    'og:image dimensions must be declared so crawlers render the large card');
+  // WhatsApp gives up on slow or oversized images.
+  const bytes = statSync('public/og-image.png').size;
+  assert.ok(bytes < 400_000, `og-image.png is ${Math.round(bytes / 1024)}KB, too heavy for a preview`);
+});
+
+await test('the web manifest points only at icons that exist', () => {
+  const manifest = JSON.parse(read('public/site.webmanifest'));
+  assert.ok(manifest.icons.length >= 2);
+  for (const icon of manifest.icons) {
+    assert.ok(statSync(join('public', icon.src.slice(1))).size > 200, `${icon.src} is missing`);
+  }
+  assert.equal(manifest.start_url, '/');
 });
 
 /* ---------------- extraction ---------------- */

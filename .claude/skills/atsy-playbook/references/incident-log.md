@@ -221,3 +221,11 @@ Atsy's own incidents start at #36.
     white-on-white detector silently read NaN and never fired. → Handle both
     shapes, and prove each detector fires on a fixture built to trigger it —
     a detector that has never fired is not evidence of a clean corpus.
+
+47. **A file was emptied by reading and writing it in one expression** — twice
+    in one session, on the same file. `io.open(path, 'w').write(io.open(path).read())`
+    truncates before the read runs, because Python evaluates arguments left to
+    right. Both times the unit tests caught it immediately (`does not provide
+    an export named 'VERSION'`), but the second time is the point: an
+    unremarkable slip repeated is a habit. → Edit files by reading fully into a
+    variable first, then writing. Never nest a read inside the write call.
