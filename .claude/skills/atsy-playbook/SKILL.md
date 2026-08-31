@@ -78,8 +78,18 @@ logic, Playwright specs, or anything he will see on his phone.
 6. **Verify the deploy through the GitHub Actions API** — a run must exist for
    the merge SHA and both jobs must conclude success. If no run appears within
    ~2 minutes, dispatch `deploy.yml` manually. Never verify by fetching the site
-   from a sandbox; the proxy blocks it.
-7. After the merge: `git fetch origin main && git checkout -B <branch> origin/main`.
+   from a sandbox; the proxy blocks it. Direct `curl` to `api.github.com` is
+   blocked too: only the GitHub MCP tools reach it, so no shell-based watcher
+   can poll CI.
+7. **Read the deploy log, not just its conclusion.** Two steps carry findings a
+   green run will not show you: *Check the Worker's secrets are in place* and
+   *Verify the deployed version*. A green run with a secrets warning is how
+   v0.6.0 shipped a feature that could not work in production (incident 57).
+8. **If the release added a secret, dispatch `provision.yml`** — it is a manual
+   workflow, so adding a generation step and running it are two separate acts,
+   and only the first tends to happen. Confirm from wrangler's own
+   "Uploaded secret X" line, never from the workflow's echo (incident 48).
+9. After the merge: `git fetch origin main && git checkout -B <branch> origin/main`.
 
 ## 5. Environment facts that save time
 

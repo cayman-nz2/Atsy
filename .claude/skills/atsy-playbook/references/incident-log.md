@@ -335,3 +335,20 @@ Atsy's own incidents start at #36.
     inherits its assumptions, not just its declarations. The result card's
     filename now wraps (`overflow-wrap: anywhere`) instead, and the horizontal
     scroll gate caught it because the gate runs on the new screen too.
+
+57. **A feature shipped to production that could not work there.** v0.6.0 went
+    live with CV upload, and every upload would have returned 503: `CV_MASTER_KEY`
+    was never on the Worker. The generation step was added to `provision.yml` in
+    the previous release, but `provision.yml` only runs when it is dispatched by
+    hand — so adding the step and running it are two separate acts, and only the
+    first happened. Every gate passed, because E2E supplies its own development
+    key through `--var` and therefore proves nothing about production secrets.
+    → Caught by the deploy's Worker-secrets check, written in the same release
+    for the *opposite* problem (#53, a warning that lied pessimistically). That
+    is the lesson worth keeping: the check earned its place on its first run,
+    against a failure nobody predicted. Two habits follow. Read the
+    Worker-secrets step's output on every deploy, not just the run's conclusion
+    — a green run with a warning is the exact shape of this incident. And when a
+    release adds a secret, dispatching `provision.yml` is part of shipping it,
+    not a follow-up: a manual workflow is a step someone has to remember, which
+    means it is a step that will be forgotten.
