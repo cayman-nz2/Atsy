@@ -135,6 +135,21 @@ jobs:
               || echo "::warning::could not set TURNSTILE_SECRET_KEY — has the Worker been deployed yet?"
           fi
 
+      # The key that encrypts stored CVs. Generated here so it never travels
+      # through a person, and never regenerated: a new key would make every
+      # stored file undecryptable. Rotation is a deliberate act with a key
+      # generation bump, not a side effect of running this workflow.
+      - name: CV encryption key
+        run: |
+          if npx wrangler@4 secret list --name "${WORKER_NAME}" 2>/dev/null | grep -q CV_MASTER_KEY; then
+            echo "CV_MASTER_KEY is already set — leaving it alone, since a new key orphans every stored file"
+          else
+            node -e "process.stdout.write(require('crypto').randomBytes(32).toString('base64'))" \
+              | npx wrangler@4 secret put CV_MASTER_KEY --name "${WORKER_NAME}" \
+              && echo "CV_MASTER_KEY generated and set on the Worker" \
+              || echo "::warning::could not set CV_MASTER_KEY — has the Worker been deployed yet?"
+          fi
+
       # The salt only has to be secret and stable, so generating it here means
       # it never has to travel through a person.
       - name: IP hash salt

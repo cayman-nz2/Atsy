@@ -3,6 +3,14 @@
 // RELEASES[0].version === VERSION — bump both together, every release.
 export const RELEASES = [
   {
+    version: '0.5.0',
+    date: '2026-08-31',
+    notes: [
+      'The sign-in page is now shielded by a real bot check.',
+      'Storage for scanned CVs is provisioned and encrypted, ready for uploads.',
+    ],
+  },
+  {
     version: '0.4.1',
     date: '2026-08-31',
     notes: [
