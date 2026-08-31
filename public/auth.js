@@ -493,8 +493,16 @@
     var worthPoints = result.findings.filter(function (f) { return f.severity !== 'minor'; });
     var polish = result.findings.filter(function (f) { return f.severity === 'minor'; });
 
-    worthPoints.forEach(function (finding) { list.appendChild(fixCard(finding)); });
-    polish.forEach(function (finding) { minorList.appendChild(fixCard(finding)); });
+    worthPoints.forEach(function (finding) {
+      var card = fixCard(finding);
+      attachRewrite(card, finding);
+      list.appendChild(card);
+    });
+    polish.forEach(function (finding) {
+      var card = fixCard(finding);
+      attachRewrite(card, finding);
+      minorList.appendChild(card);
+    });
 
     minorFold.hidden = polish.length === 0;
     minorCount.textContent = polish.length === 1
@@ -630,6 +638,15 @@
       setError('result-error', 'This scan could not be read.');
       return;
     }
+    // Kept in the browser only, and sent back solely so the Worker can strip
+    // it out of a bullet before any model sees it. It was never stored.
+    lastIdentity = scan.identity
+      ? {
+        name: scan.identity.name,
+        employers: scan.identity.employers || [],
+      }
+      : lastIdentity;
+
     renderScore(result, scan);
     renderPillars(result);
     renderFixes(result);
@@ -647,7 +664,15 @@
     var link = document.getElementById('read-download');
     link.href = '/api/scans/' + scan.id + '/file';
     link.hidden = !scan.file_available;
+
+    // Role Fit re-reads the CV, so it is only offered while the file exists.
+    document.getElementById('match-result').hidden = true;
+    document.getElementById('jd').value = '';
+    var matchCard = document.getElementById('form-match').closest('.card');
+    matchCard.hidden = !scan.file_available;
+
     setError('result-error', '');
+    setError('match-error', '');
     show('result', true);
   }
 
@@ -773,6 +798,209 @@
       currentScanId = null;
       loadHistory();
       show('account', true);
+    });
+  }
+
+
+  /* ---------- role fit ---------- */
+
+  var lastIdentity = null;
+
+  function renderFit(fit, note) {
+    document.getElementById('fit-number').textContent = String(fit.score);
+
+    // A low score because the CV is a weak match, and a low score because the
+    // CV could not be read, are completely different messages. Saying the
+    // second one first is the difference between useful and misleading.
+    var unreadable = document.getElementById('fit-unreadable');
+    if (!fit.reliable) {
+      unreadable.textContent = 'Treat this number with care: ' + fit.unreadable.join(', and ')
+        + '. That is a layout problem, not a match problem — fix the items in the list above and'
+        + ' run this again, because right now a machine cannot see most of your CV.';
+      unreadable.hidden = false;
+    } else {
+      unreadable.hidden = true;
+    }
+
+    var cap = document.getElementById('fit-cap');
+    if (fit.capped) {
+      cap.textContent = 'Capped at ' + fit.score + ' because ' + fit.capReasons.join(', and ')
+        + '. Atsy will not help a CV game a parser in a way the person reading it would catch.';
+      cap.hidden = false;
+    } else {
+      cap.hidden = true;
+    }
+
+    var parts = document.getElementById('fit-components');
+    parts.textContent = '';
+    fit.components.forEach(function (part) {
+      var share = part.weight ? part.score / part.weight : 0;
+      var percent = share * 100;
+      var band = percent >= 90 ? 'excellent'
+        : (percent >= 75 ? 'strong' : (percent >= 60 ? 'work' : 'risk'));
+      var item = el('li');
+      var row = el('div', 'pillarrow');
+      row.appendChild(el('b', null, part.name));
+      row.appendChild(el('span', 'pillarnum', part.score + ' / ' + part.weight));
+      var bar = el('div', 'pillarbar');
+      bar.setAttribute('data-band', band);
+      var fill = el('span');
+      fill.style.width = Math.round(percent) + '%';
+      bar.appendChild(fill);
+      item.appendChild(row);
+      item.appendChild(bar);
+      parts.appendChild(item);
+    });
+
+    var missing = document.getElementById('fit-missing');
+    missing.textContent = '';
+    document.getElementById('fit-nomissing').hidden = fit.missing.length > 0;
+    fit.missing.forEach(function (skill) {
+      missing.appendChild(el('li', null,
+        skill.name + (skill.mustHave ? ' — listed as required' : ' — nice to have')));
+    });
+
+    // Only quote the tenure comparison when the tenure was actually readable:
+    // "your CV shows about 0" for a CV whose dates could not be parsed is a
+    // statement about Atsy, dressed up as a statement about the reader.
+    var extra = (fit.askedYears !== null && fit.heldYears > 0)
+      ? ' The advert asks for ' + fit.askedYears + ' years; your CV shows about ' + fit.heldYears + '.'
+      : '';
+    document.getElementById('fit-note').textContent = note + extra;
+    document.getElementById('match-result').hidden = false;
+  }
+
+  var matchForm = document.getElementById('form-match');
+  if (matchForm) {
+    matchForm.addEventListener('submit', async function (event) {
+      event.preventDefault();
+      setError('match-error', '');
+      var button = document.getElementById('match-submit');
+      var jd = document.getElementById('jd').value.trim();
+      if (jd.length < 60) {
+        setError('match-error', 'Paste the whole advert — a line or two is not enough to match against.');
+        return;
+      }
+      if (!currentScanId) {
+        setError('match-error', 'Scan a CV first.');
+        return;
+      }
+      busy(button, 'Matching…');
+      var result = await api('/api/scans/' + currentScanId + '/match', {
+        method: 'POST',
+        body: JSON.stringify({ jobDescription: jd }),
+      });
+      idle(button);
+      if (!result.ok) {
+        setError('match-error', MATCH_MESSAGES[result.data && result.data.error]
+          || say(result.data && result.data.error));
+        return;
+      }
+      renderFit(result.data.fit, result.data.note);
+    });
+  }
+
+  var MATCH_MESSAGES = {
+    job_description_too_short: 'Paste the whole advert — a line or two is not enough to match against.',
+    job_description_too_long: 'That is longer than any job advert needs to be. Paste the role and its requirements.',
+    file_purged: 'Role Fit needs to re-read your CV, and the stored copy was deleted 24 hours after you uploaded it. Upload it again to match it against a job.',
+    taxonomy_unavailable: 'The skills list is unavailable right now, so a match would be misleading. Try again shortly.',
+  };
+
+  /* ---------- rewrites ---------- */
+
+  var REWRITABLE = ['D02', 'D03', 'D04', 'D06'];
+
+  function attachRewrite(item, finding) {
+    if (REWRITABLE.indexOf(finding.id) < 0) return;
+    var bullets = finding.evidence
+      .map(function (piece) { return piece.text; })
+      .filter(function (text) { return text && text.split(/\s+/).length >= 4; });
+    if (!bullets.length) return;
+
+    var wrap = el('div', 'rewrite');
+    var button = el('button', 'btn btn-quiet', 'Suggest a rewrite');
+    button.type = 'button';
+    var output = el('div');
+    wrap.appendChild(button);
+    wrap.appendChild(output);
+    item.appendChild(wrap);
+
+    button.addEventListener('click', async function () {
+      busy(button, 'Writing…');
+      var result = await api('/api/scans/' + currentScanId + '/rewrite', {
+        method: 'POST',
+        body: JSON.stringify({
+          bullets: bullets.slice(0, 3).map(function (text) {
+            return { text: text, checkId: finding.id };
+          }),
+          identity: lastIdentity || {},
+        }),
+      });
+      idle(button);
+      output.textContent = '';
+      if (!result.ok) {
+        setError('result-error', say(result.data && result.data.error));
+        return;
+      }
+      result.data.suggestions.forEach(function (suggestion) {
+        var box = el('div', 'rewritebox');
+        box.appendChild(el('div', 'rewritelabel', suggestion.source === 'ai'
+          ? result.data.label
+          : 'How to fix it yourself'));
+        box.appendChild(el('div', null, suggestion.suggestion || suggestion.guidance));
+        box.appendChild(el('div', 'rewriteorig', 'Your line: ' + suggestion.original));
+        if (suggestion.suggestion) {
+          var copy = el('button', 'linkbtn', 'Copy');
+          copy.type = 'button';
+          copy.addEventListener('click', function () {
+            navigator.clipboard.writeText(suggestion.suggestion).then(function () {
+              copy.textContent = 'Copied';
+            }, function () {
+              copy.textContent = 'Select it and copy';
+            });
+          });
+          box.appendChild(copy);
+        }
+        output.appendChild(box);
+      });
+      if (result.data.degraded && result.data.note) {
+        output.appendChild(el('p', 'fineprint', result.data.note));
+      }
+    });
+  }
+
+  /* ---------- feedback ---------- */
+
+  var feedbackForm = document.getElementById('form-feedback');
+  if (feedbackForm) {
+    feedbackForm.addEventListener('submit', async function (event) {
+      event.preventDefault();
+      setError('feedback-error', '');
+      var ok = document.getElementById('feedback-ok');
+      ok.hidden = true;
+      var button = document.getElementById('feedback-submit');
+      var message = document.getElementById('feedback-message').value.trim();
+      if (message.length < 10) {
+        setError('feedback-error', 'A sentence or two, so there is something to act on.');
+        return;
+      }
+      busy(button, 'Sending…');
+      var result = await api('/api/feedback', {
+        method: 'POST',
+        body: JSON.stringify({
+          type: document.getElementById('feedback-type').value,
+          message: message,
+        }),
+      });
+      idle(button);
+      if (!result.ok) {
+        setError('feedback-error', say(result.data && result.data.error));
+        return;
+      }
+      document.getElementById('feedback-message').value = '';
+      ok.textContent = result.data.message;
+      ok.hidden = false;
     });
   }
 

@@ -400,6 +400,39 @@ a:hover { text-decoration-thickness: 2px; }
 .risk[data-band='medium'] { color: var(--band-work); }
 .risk[data-band='high'] { color: var(--band-risk); }
 
+/* ---------- role fit and feedback ---------- */
+.textarea {
+  min-height: 96px; resize: vertical; line-height: 1.5;
+  font-family: var(--body); padding: 10px 12px;
+}
+select.input { appearance: none; background-image: none; }
+
+.fitrow { display: flex; align-items: baseline; gap: var(--s2); margin-top: var(--s4); }
+.fitnum {
+  font-family: var(--display); font-size: 40px; font-weight: 700;
+  line-height: 1; letter-spacing: -.02em; color: var(--ink);
+}
+.fitof { font-size: 13px; color: var(--ink-3); }
+
+.formok {
+  font-size: 14px; color: var(--band-strong);
+  border-left: 2px solid var(--band-strong); padding-left: var(--s3);
+}
+
+/* A rewrite sits inside the fix it belongs to, so the suggestion and the
+   problem are never read apart from each other. */
+.rewrite { display: grid; gap: var(--s2); margin-top: var(--s2); }
+.rewritebox {
+  border: 1px solid var(--signal-edge); background: var(--signal-soft);
+  border-radius: var(--r-ctl); padding: var(--s3) var(--s4);
+  font-size: 14px; color: var(--ink); display: grid; gap: 6px;
+}
+.rewritelabel {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .04em;
+  text-transform: uppercase; color: var(--ink-3);
+}
+.rewriteorig { font-size: 12.5px; color: var(--ink-3); overflow-wrap: anywhere; }
+
 /* ---------- machine-view demo ---------- */
 .demo { display: grid; gap: var(--s5); grid-template-columns: minmax(0, 1fr); }
 @media (min-width: 920px) {

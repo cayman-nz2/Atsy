@@ -34,7 +34,12 @@ export default defineConfig({
     // with "storage unavailable" — correctly, and uselessly for a test. This
     // is a fixed, obviously-fake development key: 32 bytes of 'A'. A unit test
     // forbids it from ever appearing in wrangler.jsonc.
-    command: `npx wrangler dev --port ${PORT} --ip 127.0.0.1`
+    // --local disables remote bindings. Workers AI has no local simulation, so
+    // without this the AI binding sends `wrangler dev` to Cloudflare for a
+    // proxy session and the whole suite fails on a missing API token. Running
+    // local is also what the suite should be testing: the product must work
+    // completely with AI unavailable, and here it genuinely is.
+    command: `npx wrangler dev --local --port ${PORT} --ip 127.0.0.1`
       + ' --var OTP_ECHO:1 --var TURNSTILE_BYPASS:1 --var OTP_MAX_PER_IP_HOUR:500'
       + ' --var TURNSTILE_SITE_KEY:'
       + ` --var CV_MASTER_KEY:${DEV_CV_KEY}`,

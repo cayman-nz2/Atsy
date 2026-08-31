@@ -23,6 +23,12 @@ import { runRetention, purgeFiles, purgeRecords, purgeEphemera } from '../src/re
 import { runChecks, ALL_CHECKS, PILLARS } from '../src/scoring/index.js';
 import { buildContext } from '../src/scoring/context.js';
 import { buildMatcher } from '../src/skills.js';
+import { roleFit, totalTenureYears, seniorityOf } from '../src/scoring/role-fit.js';
+import {
+  redact, templateRewrite, rewriteBullets, spentToday, today,
+  REWRITABLE, DAILY_NEURON_BUDGET,
+} from '../src/rewrite.js';
+import { submitFeedback, adminStats, adminFeedback, resolveFeedback } from '../src/admin.js';
 import { RELEASES } from '../src/report.js';
 import {
   json, err, escapeHtml, nowSec, SECURITY_HEADERS,
@@ -415,6 +421,14 @@ await test('deleting an account really empties every table, not just the ones we
     .bind(user.email, 'hash', nowSec() + 600, nowSec()).run();
   env.DB.prepare('INSERT INTO sessions (token_hash, user_id, created_at, expires_at, last_used) VALUES (?, ?, ?, ?, ?)')
     .bind('token-hash', user.id, nowSec(), nowSec() + 600, nowSec()).run();
+  env.DB.prepare(
+    `INSERT INTO job_matches (scan_id, user_id, created_at, jd_hash, role_fit)
+     VALUES (?, ?, ?, ?, ?)`,
+  ).bind(scan.id, user.id, nowSec(), 'hash', 72).run();
+  env.DB.prepare('INSERT INTO ai_user_usage (user_id, day, calls) VALUES (?, ?, ?)')
+    .bind(user.id, '2026-08-31', 3).run();
+  env.DB.prepare('INSERT INTO feedback (user_id, email, type, message, created_at) VALUES (?, ?, ?, ?, ?)')
+    .bind(user.id, user.email, 'idea', 'A thought about the scoring.', nowSec()).run();
   await getScanFile(new Request('https://atsy.test/'), env, user, scan.id);
 
   const tables = userDataTables(env);
@@ -563,11 +577,23 @@ await test('no class name is styled by two different components', () => {
   assert.deepEqual(clashes, [], `these classes set display in two separate rules: ${clashes.join(', ')}`);
 });
 
-await test('every page carries the link-preview metadata a share needs', () => {
+await test('every shareable page carries the link-preview metadata a share needs', () => {
   // WhatsApp, Slack and iMessage read Open Graph tags, not the favicon: a page
   // without them shares as a bare grey link.
+  //
+  // A page marked noindex is not meant to be shared — the admin view is an
+  // operations screen, and a preview card for it would be meaningless — so the
+  // rule applies to the pages a reader might actually send someone.
   const required = ['og:title', 'og:description', 'og:image', 'og:url', 'og:type', 'og:site_name'];
-  for (const page of htmlPages) {
+  const shareable = htmlPages.filter((page) => !read(page).includes('name="robots"'));
+  // Named rather than counted: the pages someone actually sends a friend are
+  // the landing page and the two that explain the product, and a refactor that
+  // quietly dropped one of them from this rule should fail here.
+  for (const must of ['index.html', 'about.html', 'privacy.html']) {
+    assert.ok(shareable.some((page) => page.endsWith(must)),
+      `${must} must carry a share card`);
+  }
+  for (const page of shareable) {
     const body = read(page);
     for (const property of required) {
       assert.ok(body.includes(`property="${property}"`), `${page} is missing ${property}`);
@@ -1613,6 +1639,337 @@ await test('the skill checks stand down when the taxonomy is unavailable', async
   // to load would be a lie caused by an outage.
   const without = await scoreOf('clean', { taxonomy: null });
   assert.ok(!without.checkIds.includes('E03'), 'E03 fired without a taxonomy to judge against');
+});
+
+/* ---------------- Role Fit ---------------- */
+
+const JD_OPERATIONS = [
+  'Operations Manager',
+  'Kauri Freight is hiring an Operations Manager for our Auckland depot network.',
+  '',
+  'Requirements:',
+  '- 5+ years managing warehouse or dispatch operations',
+  '- Strong SQL and Power BI for reporting',
+  '- Experience with Lean and continuous improvement',
+  '- ERP migration experience',
+  '',
+  'Nice to have:',
+  '- Kubernetes',
+  '- Salesforce',
+].join('\n');
+
+const taxonomyFor = (env) => {
+  const rows = env.DB.prepare('SELECT canonical, alias, family, kind FROM skills').all().results;
+  return buildMatcher(new Map(rows.map((row) =>
+    [row.alias, { canonical: row.canonical, family: row.family, kind: row.kind }])));
+};
+
+const fitFor = async (name, jd, findings = []) => {
+  const env = testEnv();
+  const taxonomy = taxonomyFor(env);
+  const ctx = buildContext(await buildModel(fixture(name)), { taxonomy });
+  return roleFit(ctx, jd, findings);
+};
+
+await test('Role Fit scores the five components and totals them', async () => {
+  const fit = await fitFor('clean', JD_OPERATIONS);
+  assert.ok(fit, 'Role Fit returned nothing');
+  assert.equal(fit.components.length, 5);
+  assert.equal(fit.components.reduce((sum, part) => sum + part.weight, 0), 100);
+  for (const part of fit.components) {
+    assert.ok(part.score >= 0 && part.score <= part.weight, `${part.id} out of range`);
+  }
+  assert.ok(fit.score > 0 && fit.score <= 100, `score was ${fit.score}`);
+  assert.deepEqual(fit.target, [75, 85]);
+});
+
+await test('Role Fit is deterministic for a fixed CV and JD', async () => {
+  const first = JSON.stringify(await fitFor('clean', JD_OPERATIONS));
+  const second = JSON.stringify(await fitFor('clean', JD_OPERATIONS));
+  assert.equal(first, second);
+});
+
+await test('Role Fit finds the skills the CV has and names the ones it lacks', async () => {
+  const fit = await fitFor('clean', JD_OPERATIONS);
+  assert.ok(fit.matched.includes('SQL'), `matched: ${fit.matched.join(', ')}`);
+  assert.ok(fit.matched.includes('Power BI'));
+  // Kubernetes is in the JD's nice-to-have block and not in the CV.
+  const missingNames = fit.missing.map((skill) => skill.name);
+  assert.ok(missingNames.includes('Kubernetes'), `missing: ${missingNames.join(', ')}`);
+  // Must-haves are listed before nice-to-haves.
+  const firstNice = fit.missing.findIndex((skill) => !skill.mustHave);
+  const lastMust = fit.missing.map((skill) => skill.mustHave).lastIndexOf(true);
+  if (firstNice !== -1 && lastMust !== -1) assert.ok(lastMust < firstNice);
+});
+
+await test('a must-have counts double, so missing one costs more', async () => {
+  const asMust = await fitFor('clean', [
+    'Operations Manager', 'Requirements:', '- Kubernetes', '- SQL',
+  ].join('\n'));
+  const asNice = await fitFor('clean', [
+    'Operations Manager', 'Nice to have:', '- Kubernetes', 'Requirements:', '- SQL',
+  ].join('\n'));
+  const mustSkills = asMust.components.find((part) => part.id === 'skills').score;
+  const niceSkills = asNice.components.find((part) => part.id === 'skills').score;
+  assert.ok(mustSkills < niceSkills,
+    `missing a must-have (${mustSkills}) should cost more than missing a nice-to-have (${niceSkills})`);
+});
+
+await test('Role Fit never moves the Atsy Score', async () => {
+  // The two numbers answer different questions. A score that changed because
+  // someone pasted a different job would be useless for tracking progress.
+  const model = await buildModel(fixture('clean'));
+  const env = testEnv();
+  const taxonomy = taxonomyFor(env);
+  const before = runChecks(model, { filename: 'clean.pdf', fileBytes: 900, taxonomy }).score;
+  const ctx = buildContext(model, { taxonomy });
+  roleFit(ctx, JD_OPERATIONS, []);
+  const after = runChecks(model, { filename: 'clean.pdf', fileBytes: 900, taxonomy }).score;
+  assert.equal(before, after);
+});
+
+await test('the integrity guard caps Role Fit and says which rule fired', async () => {
+  // Hidden text.
+  const hidden = await fitFor('clean', JD_OPERATIONS, [{ id: 'P14' }]);
+  assert.equal(hidden.capped, true);
+  assert.ok(hidden.score <= 60, `capped score was ${hidden.score}`);
+  assert.ok(hidden.capReasons.some((reason) => /hidden text/.test(reason)));
+
+  // Keyword stuffing: the same term over and over.
+  const stuffed = await fitFor('clean',
+    ['Operations Manager', 'Requirements:', '- Process design'].join('\n'));
+  assert.ok(stuffed, 'no fit for the stuffing case');
+
+  // And a clean CV against a clean JD is not capped.
+  const fine = await fitFor('clean', JD_OPERATIONS);
+  assert.equal(fine.capped, false);
+});
+
+await test('tenure counts overlapping roles once', () => {
+  const overlapping = [
+    { range: { from: { year: 2020, month: 1 }, to: { year: 2024, month: 1 } } },
+    { range: { from: { year: 2021, month: 1 }, to: { year: 2023, month: 1 } } },
+  ];
+  // Four years, not six: a contract running beside a permanent job is not
+  // twice the experience.
+  assert.equal(Math.round(totalTenureYears(overlapping)), 4);
+});
+
+await test('seniority bands read the title, and the highest word wins', () => {
+  assert.equal(seniorityOf('Graduate Engineer'), 1);
+  assert.equal(seniorityOf('Senior Engineer'), 2);
+  assert.equal(seniorityOf('Head of Operations'), 3);
+  assert.equal(seniorityOf('Something Unclassifiable'), null);
+});
+
+await test('a JD stating years is compared against real tenure', async () => {
+  const fit = await fitFor('clean', JD_OPERATIONS);
+  assert.equal(fit.askedYears, 5);
+  assert.ok(fit.heldYears > 0, 'no tenure computed');
+});
+
+/* ---------------- AI rewrites ---------------- */
+
+await test('redaction removes every identifier before the model sees the bullet', () => {
+  const bullet = 'Priya Raman led the Kauri Logistics migration, see priya.raman@example.com '
+    + 'or linkedin.com/in/priyaraman or call +64 21 555 0134.';
+  const clean = redact(bullet, {
+    name: 'Priya Raman',
+    employers: ['Kauri Logistics', 'Southbound Freight'],
+  });
+  for (const secret of ['Priya', 'Raman', 'Kauri', 'priya.raman@example.com', '555 0134', 'linkedin.com']) {
+    assert.ok(!clean.includes(secret), `redaction leaked "${secret}": ${clean}`);
+  }
+  // And it still reads as a sentence, or the model cannot rewrite it.
+  assert.ok(clean.includes('[name]') && clean.includes('[employer]'));
+  assert.ok(clean.includes('migration'), 'redaction ate the content too');
+});
+
+await test('redaction survives a name that also appears inside an email', () => {
+  const clean = redact('Contact priya@kauri.co.nz — Priya delivered it.', { name: 'Priya Raman' });
+  assert.ok(!clean.includes('priya'), `leaked a lowercase name: ${clean}`);
+  assert.ok(!clean.includes('Priya'));
+});
+
+await test('the template fallback never invents a number', () => {
+  const fallback = templateRewrite('Responsible for the depot network', 'D03');
+  assert.equal(fallback.suggestion, null, 'the fallback must not write a bullet');
+  assert.equal(fallback.source, 'template');
+  assert.match(fallback.guidance, /add the number/);
+  assert.ok(!/\d+%/.test(fallback.guidance), 'the fallback fabricated a metric');
+});
+
+await test('rewrites are refused for checks that better wording cannot fix', () => {
+  // P02 is a two-column layout. No rewrite of a bullet fixes that, and
+  // offering one would be a lie.
+  assert.deepEqual(REWRITABLE, ['D02', 'D03', 'D04', 'D06']);
+  assert.ok(!REWRITABLE.includes('P02'));
+  assert.ok(!REWRITABLE.includes('B02'));
+});
+
+await test('with no AI binding the product still works, degraded and labelled', async () => {
+  const env = testEnv();
+  const user = testUser(env);
+  const { scan } = await (await createScan(uploadRequest(fixture('noMetrics')), env, user)).json();
+
+  const response = await rewriteBullets(new Request('https://atsy.test/'), env, user, scan.id, {
+    bullets: [{ text: 'Responsible for the depot network', checkId: 'D03' }],
+    identity: { name: 'Priya Raman' },
+  });
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.degraded, true);
+  assert.equal(body.suggestions.length, 1);
+  assert.equal(body.suggestions[0].source, 'template');
+  assert.ok(body.suggestions[0].guidance);
+  assert.match(body.label, /check it is true/);
+});
+
+await test('the daily neuron budget is spent, not guessed at', async () => {
+  const env = testEnv();
+  const user = testUser(env);
+  const { scan } = await (await createScan(uploadRequest(fixture('noMetrics')), env, user)).json();
+
+  // An AI binding that answers, so the budget is actually charged.
+  env.AI = { run: async () => ({ response: 'Cut dispatch errors by [add number]% across the depot network.' }) };
+  const request = new Request('https://atsy.test/');
+  const first = await (await rewriteBullets(request, env, user, scan.id, {
+    bullets: [{ text: 'Responsible for the depot network', checkId: 'D03' }],
+  })).json();
+  assert.equal(first.degraded, false);
+  assert.equal(first.suggestions[0].source, 'ai');
+  assert.ok(first.spentToday > 0, 'the budget was not charged');
+
+  const day = today();
+  assert.equal(await spentToday(env, day), first.spentToday);
+
+  // Spend the budget, and the product degrades rather than failing.
+  env.DB.prepare('UPDATE ai_usage SET neurons = ? WHERE day = ?').bind(DAILY_NEURON_BUDGET, day).run();
+  const after = await (await rewriteBullets(request, env, user, scan.id, {
+    bullets: [{ text: 'Responsible for the depot network', checkId: 'D03' }],
+  })).json();
+  assert.equal(after.degraded, true);
+  assert.equal(after.reason, 'daily_budget');
+  assert.equal(after.suggestions[0].source, 'template');
+});
+
+await test('a model that ignores its instructions is not shown to the reader', async () => {
+  const env = testEnv();
+  const user = testUser(env);
+  const { scan } = await (await createScan(uploadRequest(fixture('noMetrics')), env, user)).json();
+  // Both the model and the fallback return something unusable.
+  env.AI = { run: async () => ({ response: 'Sure! Here are some thoughts:\n\n1. ...' }) };
+  const body = await (await rewriteBullets(new Request('https://atsy.test/'), env, user, scan.id, {
+    bullets: [{ text: 'Responsible for the depot network', checkId: 'D03' }],
+  })).json();
+  // "Sure! Here are some thoughts:" is a preamble, not a bullet.
+  assert.equal(body.suggestions[0].source, 'template');
+});
+
+/* ---------------- feedback and admin ---------------- */
+
+await test('feedback needs a real address and a real message', async () => {
+  const env = testEnv();
+  const post = (payload) => submitFeedback(
+    new Request('https://atsy.test/api/feedback', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload),
+    }), env, null, null,
+  );
+  assert.equal((await post({ email: 'nope', message: 'this is long enough' })).status, 400);
+  assert.equal((await post({ email: 'a@b.co', message: 'short' })).status, 400);
+  assert.equal((await post({ email: 'a@b.co', type: 'idea', message: 'The score felt wrong to me.' })).status, 200);
+
+  const row = env.DB.prepare('SELECT email, type, message, status FROM feedback').first();
+  assert.equal(row.email, 'a@b.co');
+  assert.equal(row.type, 'idea');
+  assert.equal(row.status, 'new');
+});
+
+await test('the admin endpoints are a 404 for everyone but the owner', async () => {
+  const env = testEnv({ ADMIN_EMAILS: 'owner@example.com' });
+  const stranger = testUser(env, 'stranger@example.com');
+  const owner = testUser(env, 'owner@example.com');
+  const request = new Request('https://atsy.test/');
+
+  // 404, not 403: an endpoint that admits it exists is an endpoint worth
+  // attacking.
+  assert.equal((await adminStats(request, env, stranger)).status, 404);
+  assert.equal((await adminFeedback(request, env, stranger)).status, 404);
+  assert.equal((await adminStats(request, env, owner)).status, 200);
+});
+
+await test('no admin endpoint returns CV content, ever', async () => {
+  // The promise on /privacy is that nobody at Atsy can read a CV. This is the
+  // test that keeps it true as endpoints are added.
+  const env = testEnv({ ADMIN_EMAILS: 'owner@example.com' });
+  const reader = testUser(env, 'reader@example.com');
+  const owner = testUser(env, 'owner@example.com');
+  await createScan(uploadRequest(fixture('clean'), { filename: 'priya-raman-cv.pdf' }), env, reader);
+  env.DB.prepare('INSERT INTO feedback (user_id, email, type, message, created_at) VALUES (?, ?, ?, ?, ?)')
+    .bind(reader.id, reader.email, 'bug', 'The score seemed low.', nowSec()).run();
+
+  const request = new Request('https://atsy.test/');
+  const payloads = [
+    JSON.stringify(await (await adminStats(request, env, owner)).json()),
+    JSON.stringify(await (await adminFeedback(request, env, owner)).json()),
+  ].join('\n');
+
+  const forbidden = [
+    'Priya Raman', 'priya.raman@example.com', 'Kauri Logistics',
+    'Lifted on-time delivery', 'priya-raman-cv.pdf', 'Southbound Freight',
+    'Power BI', 'University of Auckland',
+  ];
+  for (const secret of forbidden) {
+    assert.ok(!payloads.includes(secret), `an admin endpoint leaked "${secret}"`);
+  }
+  // And it still answers the question the owner actually has.
+  const stats = await (await adminStats(request, env, owner)).json();
+  assert.ok(stats.scans.total >= 1);
+  assert.ok(Array.isArray(stats.commonProblems));
+  assert.ok(stats.commonProblems.every((problem) => /^[A-Z]\d{2}$/.test(problem.id)));
+});
+
+await test('the owner can see which problems are common, by count', async () => {
+  const env = testEnv({ ADMIN_EMAILS: 'owner@example.com' });
+  const owner = testUser(env, 'owner@example.com');
+  const reader = testUser(env, 'reader@example.com');
+  for (const name of ['twoColumn', 'twoColumnFrames', 'clean']) {
+    await createScan(uploadRequest(fixture(name)), env, reader);
+  }
+  const stats = await (await adminStats(new Request('https://atsy.test/'), env, owner)).json();
+  const columns = stats.commonProblems.find((problem) => problem.id === 'P02');
+  assert.ok(columns, 'P02 did not appear in the aggregates');
+  assert.equal(columns.count, 2);
+  assert.equal(columns.title, 'Two-column layout');
+});
+
+await test('feedback can be resolved, and only by the owner', async () => {
+  const env = testEnv({ ADMIN_EMAILS: 'owner@example.com' });
+  const owner = testUser(env, 'owner@example.com');
+  const stranger = testUser(env, 'stranger@example.com');
+  env.DB.prepare('INSERT INTO feedback (email, type, message, created_at) VALUES (?, ?, ?, ?)')
+    .bind('someone@example.com', 'bug', 'Something went wrong.', nowSec()).run();
+  const id = env.DB.prepare('SELECT id FROM feedback').first().id;
+  const body = (payload) => new Request('https://atsy.test/', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload),
+  });
+
+  assert.equal((await resolveFeedback(body({}), env, stranger, id)).status, 404);
+  assert.equal((await resolveFeedback(body({ note: 'fixed in 0.8.0' }), env, owner, id)).status, 200);
+  const row = env.DB.prepare('SELECT status, resolution_note FROM feedback WHERE id = ?').bind(id).first();
+  assert.equal(row.status, 'done');
+  assert.equal(row.resolution_note, 'fixed in 0.8.0');
+});
+
+await test('a feedback message is escaped before it reaches an admin view', async () => {
+  // Feedback is untrusted user content and the inbox is HTML.
+  const env = testEnv({ ADMIN_EMAILS: 'owner@example.com' });
+  const owner = testUser(env, 'owner@example.com');
+  env.DB.prepare('INSERT INTO feedback (email, type, message, created_at) VALUES (?, ?, ?, ?)')
+    .bind('x@y.co', 'bug', '<script>alert(1)</script> and "quotes"', nowSec()).run();
+  const body = await (await adminFeedback(new Request('https://atsy.test/'), env, owner)).json();
+  assert.ok(!body.feedback[0].message.includes('<script>'), 'a script tag survived');
+  assert.match(body.feedback[0].message, /&lt;script&gt;/);
 });
 
 /* ---------------- report ---------------- */

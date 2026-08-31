@@ -76,9 +76,12 @@ export async function sendEmail(env, to, subject, bodyLines, { replyTo, copyLine
 // Fire-and-forget owner notification. It must never block or fail a user's
 // action, so it runs through ctx.waitUntil and swallows every error. Skipped
 // in local dev and E2E.
-export function notifyOwner(env, ctx, subject, bodyLines) {
+export function notifyOwner(env, ctx, subject, bodyLines, options = {}) {
   if (!env.OWNER_EMAIL || env.OTP_ECHO === '1') return;
-  const task = sendEmail(env, env.OWNER_EMAIL, subject, bodyLines)
+  // Options reach sendEmail so a feedback notification can carry the sender's
+  // address as Reply-To: hitting reply in the owner's mail client should
+  // answer the person who wrote in, not Atsy itself.
+  const task = sendEmail(env, env.OWNER_EMAIL, subject, bodyLines, options)
     .catch((error) => console.log('owner notify failed:', error.message));
   if (ctx && ctx.waitUntil) ctx.waitUntil(task);
 }

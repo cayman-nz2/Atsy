@@ -118,7 +118,7 @@ X-ray** — the original PDF rendered with bounding boxes over each finding — 
 not: it needs a self-hosted PDF.js build vendored into `dist/`, and the machine
 view delivers the same insight without one. It is the last piece of M4.
 
-## M5 — Role fit and rewrites
+## M5 — Role fit and rewrites — **shipped v0.8.0 (2026-08-31)**
 
 **Ships:** job-description paste, deterministic Role Fit scoring, missing
 must-haves, the integrity cap, AI bullet rewrites with redaction, the daily
@@ -128,7 +128,13 @@ neuron budget with graceful degradation, and per-user caps.
 budget test proves the product still works with AI disabled, and Role Fit is
 stable for a fixed CV + JD pair.
 
-## M6 — Loop and operations
+*Status:* all three pass. One finding worth recording: a low Role Fit means two
+completely different things — a weak match, or a CV whose experience could not
+be parsed at all — and reporting the second as the first would be the most
+misleading number in the product. Role Fit now carries a `reliable` flag and
+leads with "we could not read your CV" when that is the truth.
+
+## M6 — Loop and operations — **shipped v0.8.0 (2026-08-31)**
 
 **Ships:** scan history with deltas, report export, the feedback box (email
 required), owner notification emails (new signup, new feedback), the "it's
@@ -138,6 +144,14 @@ feedback inbox.
 **Done when:** the owner receives a signup email and a feedback email in
 production, the admin portal shows real numbers on his phone, and the
 admin-blindness test proves no endpoint returns CV content.
+
+*Status:* the admin portal is at `/admin` (404 to everyone but `ADMIN_EMAILS`,
+never 403 — an endpoint that admits it exists is worth attacking), the feedback
+box is on the account screen and mails the owner with the sender as Reply-To,
+and the admin-blindness test asserts that no admin payload contains a name,
+an email, an employer, a filename or a line of CV text. The two email clauses
+are the owner's to confirm in production; everything else is proven by the
+suite.
 
 ## M7 — v1.0.0
 
