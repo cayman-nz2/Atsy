@@ -335,3 +335,39 @@ Atsy's own incidents start at #36.
     inherits its assumptions, not just its declarations. The result card's
     filename now wraps (`overflow-wrap: anywhere`) instead, and the horizontal
     scroll gate caught it because the gate runs on the new screen too.
+
+57. **A feature shipped to production that could not work there.** v0.6.0 went
+    live with CV upload, and every upload would have returned 503: `CV_MASTER_KEY`
+    was never on the Worker. The generation step was added to `provision.yml` in
+    the previous release, but `provision.yml` only runs when it is dispatched by
+    hand — so adding the step and running it are two separate acts, and only the
+    first happened. Every gate passed, because E2E supplies its own development
+    key through `--var` and therefore proves nothing about production secrets.
+    → Caught by the deploy's Worker-secrets check, written in the same release
+    for the *opposite* problem (#53, a warning that lied pessimistically). That
+    is the lesson worth keeping: the check earned its place on its first run,
+    against a failure nobody predicted. Two habits follow. Read the
+    Worker-secrets step's output on every deploy, not just the run's conclusion
+    — a green run with a warning is the exact shape of this incident. And when a
+    release adds a secret, dispatching `provision.yml` is part of shipping it,
+    not a follow-up: a manual workflow is a step someone has to remember, which
+    means it is a step that will be forgotten.
+
+58. **Two E2E tests raced the UI, and one of them passed for the wrong reason.**
+    The upload helper waited on the `POST /api/scans` *response* and returned —
+    but the submit handler still had to parse the JSON and paint, so tests that
+    read `#read-download`'s href immediately got the markup placeholder instead
+    of the real URL. It passed locally twice and in two CI runs, then failed on a
+    loaded runner during a documentation-only PR.
+    The second half is the more useful lesson. The placeholder was `href="#"`,
+    so the "a signed-out browser cannot read a scan" test fetched `/#` — which
+    resolves to the app page and answers **200**. A test asserting 401 got 200
+    from a URL it never meant to request; with the placeholder removed the same
+    bug reports `null` and `404`, which is unmistakable.
+    → Waiting for a response is not waiting for the render: a helper must await
+    the state its callers actually read (`#card-read` visible and the href
+    matching), never the network event that precedes it. And never leave
+    `href="#"` on an anchor that JavaScript fills in — it is a live link to the
+    current page, so it turns a missing value into a successful request and
+    hides the failure. Reproduced by injecting a 600 ms delay before the render:
+    the old helper fails, the new one passes.
