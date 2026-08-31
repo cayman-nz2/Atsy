@@ -114,21 +114,6 @@
         </form>
       </div>
 
-      <div class="card" id="card-read" hidden>
-        <h2 class="cardtitle">What a parser read</h2>
-        <p class="readfile"><span class="readname" id="read-file"></span></p>
-        <dl class="reads" id="read-facts"></dl>
-        <p class="note" id="read-verdict"></p>
-        <div class="quietrow">
-          <!-- No href until a scan supplies one: an anchor with href="#" is a live
-               link to the top of the page, and fetching it answers 200. -->
-          <a class="btn btn-quiet" id="read-download" target="_blank" rel="noopener">Open the stored copy</a>
-          <button class="btn btn-quiet" type="button" id="read-delete">Delete this scan</button>
-        </div>
-        <p class="fineprint">Scoring — the 49 checks and the fix list — is the next release.
-          Atsy will not show you a score it has not actually computed.</p>
-      </div>
-
       <div class="card" id="card-history" hidden>
         <h2 class="cardtitle">Your scans</h2>
         <ul class="tightlist" id="history-list"></ul>
@@ -151,12 +136,84 @@
       </div>
     </section>
 
+    <!-- Results -->
+    <section class="screen screen-wide" id="screen-result" hidden>
+      <button class="linkbtn backbtn" type="button" id="result-back">Back to upload</button>
+
+      <div class="scorehead">
+        <div class="scoredial" id="score-dial">
+          <span class="scorenum" id="score-number">—</span>
+          <span class="scoreof">/ 100</span>
+        </div>
+        <div class="scoresay">
+          <p class="eyebrow">Atsy score</p>
+          <h1 class="screen-title" id="score-band">Scanning…</h1>
+          <p class="screen-lede" id="score-lede"></p>
+          <p class="fname" id="score-file"></p>
+        </div>
+      </div>
+
+      <div class="note" id="score-cap" hidden></div>
+
+      <div class="card">
+        <h2 class="cardtitle">Where the points went</h2>
+        <ul class="pillars" id="pillar-list"></ul>
+        <p class="fineprint">Deductions never cross pillars: strong content still scores as strong
+          content even when the layout is stopping a parser from reading it.</p>
+      </div>
+
+      <div class="card">
+        <h2 class="cardtitle">Fix these, worst first</h2>
+        <p id="fix-none" hidden>Nothing to fix. This CV came through cleanly.</p>
+        <ol class="fixes" id="fix-list"></ol>
+      </div>
+
+      <details class="fold" id="fix-minor-fold" hidden>
+        <summary class="foldtitle" id="fix-minor-count">Smaller things</summary>
+        <p class="foldnote">Worth a point each. Fix them once the list above is done.</p>
+        <ol class="fixes" id="fix-minor"></ol>
+      </details>
+
+      <div class="card">
+        <h2 class="cardtitle">How six systems would read it</h2>
+        <ul class="engines" id="engine-list"></ul>
+        <p class="fineprint" id="engine-disclaimer"></p>
+      </div>
+
+      <details class="fold">
+        <summary class="foldtitle">What the machine actually reads</summary>
+        <p class="foldnote">The text in the order the file stores it — not the order you see on the
+          page. This is what a parser works from.</p>
+        <div class="machine" id="machine-view"></div>
+      </details>
+
+      <details class="fold">
+        <summary class="foldtitle">What a parser extracted</summary>
+        <p class="foldnote">The structural facts Atsy read out of the document.</p>
+        <dl class="reads" id="read-facts"></dl>
+      </details>
+
+      <div class="card">
+        <h2 class="cardtitle">This scan</h2>
+        <p class="fineprint">The stored copy of your CV is deleted automatically 24 hours after the
+          upload. Your score and these findings are kept for 30 days so you can compare a re-scan.</p>
+        <div class="quietrow">
+          <!-- No href until a scan supplies one: an anchor with href="#" is a live
+               link to the top of the page, and fetching it answers 200. -->
+          <a class="btn btn-quiet" id="read-download" target="_blank" rel="noopener">Open the stored copy</a>
+          <button class="btn btn-quiet" type="button" id="read-delete">Delete this scan</button>
+          <button class="btn btn-primary" type="button" id="scan-another">Scan another CV</button>
+        </div>
+        <p class="formerror" id="result-error" role="alert" hidden></p>
+      </div>
+    </section>
+
   </div>
 </main>
 
 <footer class="foot">
   <div class="wrap">
-    <span>Atsy &middot; free CV scanner &middot; <span id="version">v0.6.0</span></span>
+    <span>Atsy &middot; free CV scanner &middot; <span id="version">v0.7.0</span></span>
     <nav class="footnav" aria-label="More from Atsy">
       <a href="/">Home</a>
       <a href="/about">How it works</a>

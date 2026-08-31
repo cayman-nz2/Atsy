@@ -75,7 +75,7 @@ test.describe('screenshot tour', () => {
       await expect(page.getByRole('heading', { name: 'You are signed in' })).toBeVisible();
       await page.screenshot({ path: `screenshots/account-phone-430-${theme}.png`, fullPage: true });
 
-      // The result card, with a real scan behind it. A screen the reviewer
+      // The results screen, with a real scan behind it. A screen the reviewer
       // cannot see is a screen nobody has checked.
       await page.setInputFiles('#file', {
         name: 'priya-raman-cv.pdf',
@@ -83,9 +83,17 @@ test.describe('screenshot tour', () => {
         buffer: Buffer.from(fixture('twoColumn')),
       });
       await page.getByRole('button', { name: 'Scan this CV' }).click();
-      await expect(page.locator('#card-read')).toBeVisible();
+      await expect(page.locator('#screen-result')).toBeVisible();
+      await unstick(page);
       await page.evaluate(() => document.fonts.ready);
       await page.screenshot({ path: `screenshots/scan-result-phone-430-${theme}.png`, fullPage: true });
+
+      // And the same screen with its folds open, which is where the machine
+      // view lives — the part of the product the landing page promises.
+      for (const fold of await page.locator('#screen-result .fold').all()) {
+        await fold.evaluate((node) => { node.open = true; });
+      }
+      await page.screenshot({ path: `screenshots/scan-folds-phone-430-${theme}.png`, fullPage: true });
     });
   }
 

@@ -1,9 +1,9 @@
-// The scan pipeline: upload, encrypt, store, extract, model, persist.
+// The scan pipeline: upload, encrypt, store, extract, model, score, persist.
 //
-// Scoring is deliberately absent here. Steps 1-6 of the pipeline in
-// docs/ARCHITECTURE.md §4 are pure functions over bytes and a parsed
-// document, which is why they are node-testable with no Cloudflare runtime.
-// Step 7 (scoring) plugs into `createScan` at one seam, marked below.
+// Steps 1-8 of the pipeline in docs/ARCHITECTURE.md §4. Extraction and scoring
+// are both pure functions over bytes and a parsed document, which is why they
+// are node-testable with no Cloudflare runtime — and why the same PDF always
+// produces the same score.
 //
 // Two rules shape every query in this file:
 //   * every per-user read binds `user_id` — ownership is never inferred from
@@ -19,6 +19,8 @@ import { extractDocument, UnreadablePdf, MAX_PAGES } from './extract/pdf.js';
 import { analyseLayout } from './extract/layout.js';
 import { detectSections } from './extract/sections.js';
 import { extractEntities } from './extract/entities.js';
+import { runChecks } from './scoring/index.js';
+import { loadTaxonomy } from './skills.js';
 
 // <= 5 MB, <= 10 pages (docs/PRD.md). A CV outside either is not a CV that an
 // ATS will read either, so the limits are the product's answer, not a fudge.
@@ -191,7 +193,7 @@ export const failureMessage = (reason) => UNREADABLE_MESSAGES[reason]
   || 'That PDF could not be scanned.';
 
 /** The shape the client renders. The reader's own CV text is fine here. */
-function scanResponse(row, model) {
+function scanResponse(row, model, result) {
   return {
     id: row.id,
     created_at: row.created_at,
@@ -206,6 +208,7 @@ function scanResponse(row, model) {
     scored: row.score !== null && row.score !== undefined,
     file_available: !!row.r2_key,
     model: model ? modelSummary(model) : null,
+    result: result || null,
     // Sent once, to the browser that just uploaded the file, and never stored.
     identity: model
       ? {
@@ -215,6 +218,30 @@ function scanResponse(row, model) {
         link: model.entities.contact.link,
       }
       : null,
+    // The machine view: the text in the order the FILE stores it, which is the
+    // order a parser reads. For a two-column CV this is where the damage
+    // becomes obvious, and seeing it is the whole product promise.
+    //
+    // It goes to the browser that uploaded the file and is never written down —
+    // same rule as the identity block. A scan re-opened tomorrow has the score
+    // and the findings but not this, because the text was never kept.
+    machineView: model ? machineView(model) : null,
+  };
+}
+
+const MACHINE_VIEW_LINES = 200;
+
+function machineView(model) {
+  const lines = [];
+  for (const page of model.document.pages) {
+    for (const item of page.items) {
+      if (lines.length >= MACHINE_VIEW_LINES) break;
+      lines.push({ page: page.number, text: item.text });
+    }
+  }
+  return {
+    lines,
+    truncated: model.document.pages.reduce((sum, page) => sum + page.items.length, 0) > lines.length,
   };
 }
 
@@ -326,29 +353,45 @@ export async function createScan(request, env, user) {
   // refusal with an explanation rather than a score of zero.
   if (!model.document.hasTextLayer) return fail('no_text');
 
-  // ---- scoring seam (M3) ------------------------------------------------
-  // runChecks(model) -> { score, band, pillars, engines, findings, checkIds }
-  // Until it lands, the record is complete and unscored: the extraction facts
-  // are real and worth storing, and a fabricated score would not be.
+  // Scoring. Deterministic and model-free: the same PDF always scores the
+  // same, which is what makes a re-scan mean anything.
+  const taxonomy = await loadTaxonomy(env);
+  const result = runChecks(model, { filename, fileBytes: bytes.length, taxonomy });
   const summary = modelSummary(model);
 
   const finished = await env.DB.prepare(
-    `UPDATE scans SET status = 'complete', page_count = ?, pdf_producer = ?, model_json = ?
+    `UPDATE scans SET status = 'complete', page_count = ?, pdf_producer = ?, model_json = ?,
+            score = ?, band = ?, pillars_json = ?, engines_json = ?, findings_json = ?
       WHERE id = ? AND user_id = ? AND status = 'processing'`,
   ).bind(
     model.document.pageCount,
     summary.meta.producer,
     JSON.stringify(summary),
+    result.score,
+    result.band,
+    JSON.stringify(result.pillars),
+    JSON.stringify({ engines: result.engines, disclaimer: result.engineDisclaimer }),
+    JSON.stringify({ findings: result.findings, caps: result.caps, rawScore: result.rawScore, capped: result.capped }),
     scanId, user.id,
   ).run();
   // The row was deleted or purged while this request was parsing. Say so
   // rather than reporting a scan that is not there to open.
   if (!finished.meta.changes) return err('scan_gone', 409);
 
+  // One row per triggered check: this is what the admin aggregates count, so
+  // the owner can see which problems are common without any scan being
+  // readable. Written after the row is confirmed, so a purged scan leaves no
+  // orphans behind it.
+  if (result.checkIds.length) {
+    await env.DB.batch(result.checkIds.map((checkId) => env.DB
+      .prepare('INSERT OR IGNORE INTO scan_checks (scan_id, check_id) VALUES (?, ?)')
+      .bind(scanId, checkId)));
+  }
+
   const row = await env.DB
     .prepare('SELECT * FROM scans WHERE id = ? AND user_id = ?')
     .bind(scanId, user.id).first();
-  return json({ scan: scanResponse(row, model) }, 201);
+  return json({ scan: scanResponse(row, model, result) }, 201);
 }
 
 // --- GET /api/scans ------------------------------------------------------
@@ -384,10 +427,14 @@ export async function getScan(request, env, user, scanId) {
     .bind(scanId, user.id).first();
   if (!row) return err('not_found', 404);
 
-  let model = null;
-  if (row.model_json) {
-    try { model = JSON.parse(row.model_json); } catch { model = null; }
-  }
+  const parse = (value) => {
+    if (!value) return null;
+    try { return JSON.parse(value); } catch { return null; }
+  };
+  const model = parse(row.model_json);
+  const findings = parse(row.findings_json);
+  const engines = parse(row.engines_json);
+
   return json({
     scan: {
       id: row.id,
@@ -405,6 +452,19 @@ export async function getScan(request, env, user, scanId) {
       // Already a summary on disk: the stored JSON is exactly what
       // modelSummary produced, so nothing needs stripping on the way out.
       model,
+      // The score and its reasons survive the file, so a reader still has
+      // their result after the PDF is purged at 24 hours.
+      result: findings ? {
+        score: row.score,
+        band: row.band,
+        rawScore: findings.rawScore,
+        capped: findings.capped,
+        caps: findings.caps || [],
+        pillars: parse(row.pillars_json) || [],
+        findings: findings.findings || [],
+        engines: engines ? engines.engines : [],
+        engineDisclaimer: engines ? engines.disclaimer : null,
+      } : null,
       // The identity block is not stored, so a scan re-opened later cannot
       // show it. That is the privacy promise working, not a missing feature.
       identity: null,

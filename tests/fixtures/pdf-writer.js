@@ -38,9 +38,9 @@ function rectToStream({ x, y, w, h, rgb = [0.2, 0.2, 0.2] }) {
 
 /**
  * Build a PDF from a declarative page description.
- * pages: [{ width, height, runs: [...], images: [{x,y,w,h}], rects: [{x,y,w,h,rgb}] }]
+ * pages: [{ width, height, runs, images, rects, links: [{url, rect:[x0,y0,x1,y1]}] }]
  */
-export function writePdf({ pages, info = {} }) {
+export function writePdf({ pages, info = {}, font = 'Helvetica', annotations = false }) {
   const objects = [];
   const add = (body) => objects.push(body) && objects.length; // 1-based object number
 
@@ -48,7 +48,9 @@ export function writePdf({ pages, info = {} }) {
   const pagesNumber = 2;
   objects.push('', ''); // reserved for catalog and page tree
 
-  const fontNumber = add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>');
+  // The base font is settable so a fixture can carry a font that is neither
+  // embedded nor one of the standard 14 — the case P06 exists to catch.
+  const fontNumber = add(`<< /Type /Font /Subtype /Type1 /BaseFont /${font} >>`);
 
   const pageNumbers = [];
   for (const page of pages) {
@@ -69,13 +71,24 @@ export function writePdf({ pages, info = {} }) {
     ].join('\n');
 
     const contentNumber = add(`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`);
+
+    // Link annotations live in their own object tree, not the content stream.
+    // A URL that exists only here is a URL no parser reads, which is the whole
+    // point of P15 — so a fixture needs to be able to create one.
+    const annotationNumbers = (page.links || []).map((link) => add(
+      `<< /Type /Annot /Subtype /Link /Rect [${link.rect.join(' ')}] `
+      + `/Border [0 0 0] /A << /Type /Action /S /URI /URI (${enc(link.url)}) >> >>`,
+    ));
     const xobjects = imageNumbers.length
       ? ` /XObject << ${imageNumbers.map((n) => `/Im${n} ${n} 0 R`).join(' ')} >>`
+      : '';
+    const annots = annotationNumbers.length
+      ? ` /Annots [${annotationNumbers.map((n) => `${n} 0 R`).join(' ')}]`
       : '';
     pageNumbers.push(add(
       `<< /Type /Page /Parent ${pagesNumber} 0 R /MediaBox [0 0 ${width} ${height}] `
       + `/Resources << /Font << /F1 ${fontNumber} 0 R >>${xobjects} >> `
-      + `/Contents ${contentNumber} 0 R >>`,
+      + `/Contents ${contentNumber} 0 R${annots} >>`,
     ));
   }
 

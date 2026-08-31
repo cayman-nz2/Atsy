@@ -58,6 +58,9 @@ async function scanOperators(page, OPS) {
     images: [],
     fontNames: new Set(),
     rectangles: 0,
+    // Filled shapes with their placement. A count alone cannot answer "is
+    // there a rating bar next to the word SQL", which is what P10 asks.
+    shapes: [],
   };
 
   // q/Q save and restore the WHOLE graphics state, not just the transform.
@@ -104,7 +107,27 @@ async function scanOperators(page, OPS) {
         });
         break;
       }
-      case OPS.constructPath: result.rectangles += 1; break;
+      case OPS.constructPath: {
+        result.rectangles += 1;
+        // PDF.js hands back the path's bounding box as the third argument in
+        // recent builds. Older ones omit it, so a missing box is recorded as
+        // an unplaced shape rather than guessed at.
+        // The box arrives as a Float32Array, so `Array.isArray` is false for
+        // it and every shape was silently dropped. Read it as an array-like.
+        const box = args && args[2];
+        if (box && box.length === 4 && [0, 1, 2, 3].every((i) => Number.isFinite(box[i]))) {
+          const [x0, y0, x1, y1] = [box[0], box[1], box[2], box[3]];
+          const width = Math.abs(x1 - x0);
+          const height = Math.abs(y1 - y0);
+          // Hairlines are rules and table borders, not rating bars.
+          if (width > 4 && height > 1) {
+            result.shapes.push({
+              x: Math.min(x0, x1), y: Math.min(y0, y1), width, height,
+            });
+          }
+        }
+        break;
+      }
       default: break;
     }
   }
@@ -212,6 +235,10 @@ async function readDocument(document, OPS, byteLength, maxPages) {
     const [, , pageWidth, pageHeight] = page.view;
     const content = await page.getTextContent();
     const scan = await scanOperators(page, OPS);
+    // Link annotations are a separate object tree from the content stream, so
+    // they need their own call. P15 exists because many parsers strip them:
+    // a URL that lives only in an annotation is a URL the machine never sees.
+    const annotations = await page.getAnnotations().catch(() => []);
     const { fonts: pageFonts, nameById } = fontFacts(page, scan.fontNames);
 
     const items = [];
@@ -258,7 +285,20 @@ async function readDocument(document, OPS, byteLength, maxPages) {
         height: image.height,
         areaRatio: (image.width * image.height) / (pageWidth * pageHeight),
       })),
+      shapes: scan.shapes.map((shape) => ({
+        x: shape.x,
+        top: pageHeight - shape.y - shape.height,
+        width: shape.width,
+        height: shape.height,
+      })),
       rectangles: scan.rectangles,
+      links: annotations
+        .filter((note) => note && note.subtype === 'Link')
+        .map((note) => ({
+          url: (note.url || (note.unsafeUrl || '')) || null,
+          // The rectangle is in PDF space; top-down like everything else here.
+          top: note.rect ? pageHeight - Math.max(note.rect[1], note.rect[3]) : null,
+        })),
     });
   }
 

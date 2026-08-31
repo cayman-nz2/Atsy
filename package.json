@@ -1,6 +1,6 @@
 {
   "name": "atsy",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "private": true,
   "type": "module",
   "description": "Free ATS CV scanner \u2014 see your CV the way a hiring machine sees it",
