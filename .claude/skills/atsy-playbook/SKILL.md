@@ -53,8 +53,11 @@ logic, Playwright specs, or anything he will see on his phone.
   is his decision, not a product decision.
 - **Scoring is deterministic** and never calls a model. AI writes suggestion
   text only, one bullet at a time, PII-redacted, budgeted, and clearly labelled.
-- **Honesty**: never imply Atsy returns a real ATS score. Engines disagree by up
-  to 24 points on the same file — say so on the engine cards.
+- **Honesty**: never imply Atsy returns a real ATS score, and **never show a
+  statistic Atsy did not compute itself**. Borrowed percentages from
+  resume-industry blogs (parser accuracy, share of failures, cross-engine
+  benchmarks) are unverified marketing content — they stay in `docs/RESEARCH.md`
+  tagged `[SECONDARY]` and never reach a screen, an email or a post.
 - **Never help someone game a parser** in a way a human reviewer will catch:
   hidden text and stuffing cap the score and are called out.
 - **Privacy is a promise made in code**: files encrypted before storage, purged

@@ -20,9 +20,9 @@ Read alongside: `RESEARCH.md` (evidence), `SCORING-SPEC.md` (the rubric),
 ## 1. The problem
 
 A person applying for 60 jobs gets rejected by machines they cannot see, for
-reasons nobody tells them. Two-column templates scramble in seven of eight
-parsers. Contact details in a page header are frequently never read. A scanned
-PDF is empty to a parser. None of this is visible to the applicant — the
+reasons nobody tells them. A two-column template extracts as interleaved word
+salad. Contact details in a page header are often never read. A scanned PDF is
+an empty document to a parser. None of this is visible to the applicant — the
 rejection email says "we went with other candidates".
 
 Existing checkers either paywall after one scan, or hand back an opaque number
@@ -35,10 +35,14 @@ with no evidence. Neither tells the candidate *what the machine actually saw*.
 
 Three product principles, in priority order:
 
-1. **Honest.** We never invent a number. The score is a published, deterministic
-   rubric (`SCORING-SPEC.md`), and we state plainly that real ATS engines
-   disagree with each other by up to 24 points on the same file. No fake
-   urgency, no "97% of resumes are rejected" scare copy, no dark patterns.
+1. **Honest.** We never invent a number and we never borrow one we cannot
+   stand behind. The score is a published, deterministic rubric
+   (`SCORING-SPEC.md`), and we state plainly that every ATS ships a different
+   parser and ranking model, so no third-party tool — including this one — can
+   reproduce an engine's own score. No fake urgency, no "97% of resumes are
+   rejected" scare copy, no borrowed benchmark statistics, no dark patterns.
+   Any figure shown to a user is one Atsy computed from that user's file or
+   from our own published fixture corpus (`RESEARCH.md` §0).
 2. **Actionable.** Every finding carries evidence (page, snippet, coordinates),
    a severity, a fix written as an instruction, and the points it is worth.
    A finding without a fix is a bug.

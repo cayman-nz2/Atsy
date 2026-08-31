@@ -11,8 +11,9 @@ Free, permanently: no paywall, no credits, no ads, no trackers.
   readable by anyone at Atsy, and never sent to an AI model with your name on it.
 - The scoring rubric is published in this repository. The score is deterministic:
   same CV, same score, every time.
-- Real ATS engines disagree with each other by up to 24 points on the same file.
-  Atsy reports parse risk and role fit honestly, and says so.
+- Every ATS ships a different parser and ranking model, so no third-party tool
+  can reproduce an engine's score. Atsy reports parse risk and role fit, says so
+  plainly, and never shows a statistic it did not compute itself.
 
 ## Documentation
 

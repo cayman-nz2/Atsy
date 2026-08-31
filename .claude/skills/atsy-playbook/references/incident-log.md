@@ -126,4 +126,23 @@ Atsy's own incidents start at #36.
 
 ## Atsy incidents
 
-*(none yet — append here, with the rule that prevents recurrence)*
+36. **An unverified statistic went into the requirements and the design
+    artifact as fact** (2026-08-31, owner caught it: "is that real or made
+    up"). A cross-engine benchmark — "the same CV scored 84 on Workday and 68
+    on iCIMS across 4,200 resumes" — came from a web-search summary of a
+    resume-tool marketing blog. The page itself was unreachable from the
+    session, so no methodology, sample or publisher was ever seen, yet the
+    number was written into the PRD, the scoring spec, the README, the
+    playbook and the published design artifact as though it were measured.
+    Several other borrowed figures (87% parser accuracy, 35% of failures from
+    columns, 23% from formatting, 78% market coverage, 7-of-8 parsers) came
+    from the same class of source. → **Two rules.** (1) Evidence is tagged by
+    tier in `docs/RESEARCH.md` §0: `[VERIFIED]` (primary source opened
+    ourselves), `[MECHANISM]` (structural fact we can demonstrate on our own
+    fixtures), `[SECONDARY]` (repeated by industry content sites, no primary
+    source located). (2) **Atsy never shows a statistic it did not compute
+    itself** — not in the UI, not in an email, not in a post. If a
+    quantitative claim is worth making to users, generate it from our own
+    fixture corpus and say how. A search-result summary is a lead, not a
+    citation: if the page cannot be opened and the methodology cannot be seen,
+    the number does not get written down as fact anywhere.

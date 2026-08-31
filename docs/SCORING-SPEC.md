@@ -52,7 +52,7 @@ snippet, and where available the bounding box for the X-ray overlay.
 | ID | Points | Severity | Trigger | Fix shown to user |
 | --- | --- | --- | --- | --- |
 | **P01** | fatal (caps at 25) | Critical | Extracted text < 200 characters, or < 100 characters per page: the PDF is a scan or an image export with no text layer | "This PDF has no text in it — it is a picture of a CV. Every parser sees an empty document. Export it again from Word/Google Docs as a real PDF." |
-| **P02** | 6 | Critical | Multi-column body: a vertical gutter ≥ 8% of page width, glyph-free down ≥ 60% of the text height, with ≥ 15% of the page's characters on each side | "Your layout is two columns. Seven of eight parsers read straight across and interleave them, turning your CV into word salad. Move to a single column." |
+| **P02** | 6 | Critical | Multi-column body: a vertical gutter ≥ 8% of page width, glyph-free down ≥ 60% of the text height, with ≥ 15% of the page's characters on each side | "Your layout is two columns. Parsers read the text in the order the file stores it, which runs across the gutter — the machine view shows the result. Move to a single column." |
 | **P03** | 3 | Critical | Reading-order confidence < 0.85 (Kendall tau between the PDF's own text order and top-to-bottom, left-to-right order) | "The text order stored inside the file does not match what you see. Parsers read the stored order. Rebuild the document rather than repositioning text boxes." |
 | **P04** | 3 | Major | Content in the header/footer band (top or bottom 8% of the page) that repeats across pages, or that contains contact details | "Anything in the page header or footer is frequently never read. Move it into the body of the first page." |
 | **P05** | 3 | Major | Table detected: ≥ 3 rows in which ≥ 3 text items share x-positions within 2pt, or ruled-rectangle operators enclosing text | "Your content sits in a table. Cell order is not reading order — parsers merge or drop cells. Use plain paragraphs and bullets." |
@@ -209,9 +209,9 @@ clamped to 100. **Low** < 20 · **Medium** 20–49 · **High** ≥ 50.
 Each engine card lists its top three reasons in plain words, and every card
 carries the standing disclaimer:
 
-> Real ATS engines disagree. In a 2026 benchmark the same CV scored 84 on
-> Workday and 68 on iCIMS. This is a risk estimate from how each engine is
-> known to parse, not a score from the engine itself.
+> Every ATS ships its own parser, and most are configured per employer. This is
+> a risk estimate based on how each engine is documented to behave — not a score
+> from the engine itself, and not a prediction of one.
 
 ---
 

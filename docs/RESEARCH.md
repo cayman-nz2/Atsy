@@ -7,6 +7,24 @@ Platform facts were read from Cloudflare's own documentation source (the
 not from memory. Incident #5 in the Pricey incident log (assuming a Cloudflare
 capability that did not exist) is why.
 
+## 0. How to read the evidence in this document — source tiers
+
+Not all of the material below is equally solid, and mixing the tiers would make
+the whole document untrustworthy. Every claim is tagged:
+
+| Tier | Meaning | May it appear in product copy? |
+| --- | --- | --- |
+| **[VERIFIED]** | Read from a primary source we opened ourselves — Cloudflare's own docs, a library's source, a specification | Yes |
+| **[MECHANISM]** | A structural fact about how PDF/text extraction works that we can demonstrate ourselves with a fixture, and will | Yes, once our own fixture demonstrates it |
+| **[SECONDARY]** | A claim repeated by resume-tool marketing blogs and SEO content sites. Directionally consistent across many of them, but no primary study, methodology or sample was located, and several of these domains are unreachable from this environment | **No — never in product copy, never as a number on screen** |
+
+The rule this creates, and it is a product rule, not a documentation
+preference: **Atsy never puts a statistic on screen that it cannot stand behind
+itself.** No borrowed percentages, no "97% of resumes are rejected", no
+benchmark numbers we did not run. Where we want to make a quantitative claim to
+users, we generate the evidence from our own fixture corpus and say how we got
+it. The audience is being lied to by enough people already.
+
 ---
 
 ## 1. How an ATS actually reads a CV
@@ -22,15 +40,18 @@ the parser is built in-house (Workday) or licensed (Sovren, Affinda, RChilli):
 4. **Named-entity recognition** — find names, employers, titles, dates, skills.
 5. **Structured output** — write fields into the candidate record.
 
-Field-level accuracy for modern parsers tops out around **87%**, against ~96%
-for a human reading the same document. Everything Atsy scores is about keeping
-a CV inside the 87%, not about pleasing a mythical "AI recruiter".
+Parser accuracy is commonly quoted at "around 87% of fields, versus ~96% for a
+human" **[SECONDARY]** — repeated widely, primary source not located, so it does
+not go on screen. What is safe to say, and what actually drives the product: a
+parser reconstructs structure from a page that was never designed to carry
+structure, and everything Atsy scores is about staying inside what that
+reconstruction can handle.
 
 ### 1.2 What breaks it (ranked by observed impact)
 
 | Failure | Effect | Evidence |
 | --- | --- | --- |
-| Two-column / sidebar layouts | Parser reads straight across the page and interleaves the columns into word salad. Scrambled in **7 of 8** tested ATS products; blamed for ~**35%** of parse failures. | Multiple 2026 format guides |
+| Two-column / sidebar layouts | Text is stored in the PDF in content-stream order, which for a two-column page commonly runs across the gutter — so extraction interleaves the columns. **[MECHANISM]** — demonstrable on our own fixtures; the widely-quoted "7 of 8 parsers" and "35% of failures" figures are **[SECONDARY]** and stay out of product copy | PDF content model; format guides |
 | Content in headers/footers | Frequently never read at all — contact details in a header can vanish entirely. | Format guides, Greenhouse guidance |
 | Tables and text boxes | Cell order is not reading order; content merges or drops. | Format guides |
 | Image-only / scanned PDFs | No text layer, nothing to extract. Total failure. | Universal |
@@ -40,7 +61,9 @@ a CV inside the 87%, not about pleasing a mythical "AI recruiter".
 | Skill "rating bars"/dots | Graphics convey zero text; the skill is invisible. | Format guides |
 | Missing embedded fonts / broken ToUnicode | Extracted text is garbled or ligature-mangled ("ﬁ", "Se n i o r"). | PDF spec behaviour |
 
-Formatting problems alone account for roughly **23%** of parse failures.
+A frequently-quoted figure attributes ~23% of parse failures to formatting
+alone **[SECONDARY]** — again, no primary source located, so it stays in this
+document and off the screen.
 
 ### 1.3 Per-engine behaviour (used for Atsy's engine simulations)
 
@@ -55,32 +78,47 @@ Formatting problems alone account for roughly **23%** of parse failures.
   unsure it asks the *candidate* to retype, not the recruiter to interpret.
 - **Ashby** — modern parser, tolerant, but the same heading/date rules apply.
 
-`MMM YYYY – MMM YYYY` and `MM/YYYY` both parse cleanly across Workday,
-Greenhouse, Lever, Ashby and iCIMS — together roughly **78%** of the ATS market.
+`MMM YYYY – MMM YYYY` and `MM/YYYY` are the two formats every guide agrees on,
+and both are unambiguous to a date parser regardless of locale — which is the
+reason to prefer them **[MECHANISM]**. The "78% of the ATS market" market-share
+figure attached to that advice is **[SECONDARY]**.
 
 ### 1.4 The honest truth about "ATS scores"
 
-There is no single ATS score. A May 2026 benchmark across 4,200 resumes scored
-the **same resume** at 84 (Workday), 71 (Greenhouse), 92 (Lever), 68 (iCIMS)
-and 79 (Taleo) — a **24-point spread**. No third-party checker replicates any
-real engine; they approximate.
+There is no single ATS score. Each platform ships a different parser and a
+different ranking model, several are configured per employer, and most do not
+expose a candidate-facing score at all — so no third-party checker can
+replicate one **[MECHANISM]**.
+
+A specific cross-engine benchmark ("the same resume scored 84 on Workday, 71 on
+Greenhouse, 92 on Lever, 68 on iCIMS, 79 on Taleo across 4,200 resumes, May
+2026") circulates on resume-tool blogs. It is **[SECONDARY]**: no methodology,
+sample or publisher was located, the hosting domains are unreachable from this
+environment, and the shape of the claim is exactly what a content-marketing
+page fabricates. **It must not appear in the product, in the UI, or in any
+Atsy communication.** The point it illustrates is sound and can be made without
+inventing numbers: engines differ, so Atsy reports parse risk and role fit, not
+an imagined engine score.
 
 This shapes Atsy's positioning: we report **parse safety** (deterministic,
 verifiable, engine-specific) plus **role fit** (keyword coverage against a job
 description), and we say plainly that a real ATS may differ. Claiming to
 predict "your Workday score" would be a lie, and lying to desperate job seekers
-is the one thing this product must never do.
+is the one thing this product must never do — which is exactly why we do not
+borrow other people's unverifiable statistics to make the point either.
 
 Match-rate guidance in the industry: aim **75–85%** keyword coverage against a
-specific job description; 65% still converts for many people; forcing 100% at
-the cost of readability is counter-productive because a human reads it next.
+specific job description **[SECONDARY]** — a vendor's own recommended target
+rather than a measured outcome. Atsy may use it as a target band because it is
+a reasonable, conservative heuristic, but it is labelled as guidance in the UI,
+never as a finding, and never with a borrowed statistic attached.
 
 ---
 
 ## 2. What a good 2026 CV looks like (content, not plumbing)
 
-- **Quantified outcomes** beat task lists ("improved yield from 5% to 33%"),
-  and survive both parsing and AI-assisted screening.
+- **Quantified outcomes** beat task lists ("improved yield from 5% to 33%").
+  Universal recruiter advice; treat as craft guidance, not measurement.
 - **Action verbs** open every bullet ("Led", "Reduced", "Shipped").
 - **One to two pages.** Two only for senior/technical depth.
 - **Reverse chronological** work history, most recent first.
@@ -290,6 +328,13 @@ cascade delete.
 ---
 
 ## 7. Sources
+
+The Cloudflare, unpdf and Awwwards entries were opened and read directly. The
+ATS-mechanics and CV-advice entries are resume-industry content sites: they
+agree with each other and with the underlying document mechanics, which is why
+they are useful for direction, but none of them publishes a methodology. They
+are the **[SECONDARY]** tier defined in §0, and nothing sourced only from them
+goes on screen as a number.
 
 - [How Resume Parsers Actually Work: Inside Workday, Greenhouse, Lever, iCIMS, Taleo](https://resumeoptimizerpro.com/blog/how-resume-parsers-actually-work)
 - [How Workday, Taleo & Greenhouse Read Your Resume — ApplyMate](https://apply-mate.com/blog/workday-taleo-greenhouse-ats)
