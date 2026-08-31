@@ -9,7 +9,7 @@ import {
   json, err, nowSec, randDigits, randToken, sha256Hex, hashIp,
   getCookie, sessionCookie, validEmail, readJson,
 } from './util.js';
-import { sendEmail, notifyOwner } from './notify.js';
+import { sendEmail, notifyOwner, maskCode } from './notify.js';
 
 const OTP_TTL_SEC = 10 * 60;
 const OTP_MAX_ATTEMPTS = 5;
@@ -25,12 +25,18 @@ export async function verifyTurnstile(env, token, ip) {
   // Local dev and E2E only, passed with `wrangler dev --var`. It must never
   // appear in wrangler.jsonc.
   if (env.TURNSTILE_BYPASS === '1') return true;
+
   if (!env.TURNSTILE_SECRET_KEY) {
-    // The dummy key always passes, so in production this means the bot shield
-    // is OFF. Say so loudly rather than failing quietly.
-    console.log('WARNING: TURNSTILE_SECRET_KEY unset — the bot shield is pass-through');
+    // No secret means the bot shield is knowingly off. Calling siteverify with
+    // Cloudflare's always-pass test secret looks harmless but is not: an empty
+    // token still comes back `missing-input-response`, so an unconfigured
+    // shield blocked every sign-in — failing closed for a reason that has
+    // nothing to do with bots. Skip the check and say so.
+    console.log('WARNING: TURNSTILE_SECRET_KEY unset — the bot shield is off; rate limits still apply');
+    return true;
   }
-  const secret = env.TURNSTILE_SECRET_KEY || '1x0000000000000000000000000000000AA';
+
+  const secret = env.TURNSTILE_SECRET_KEY;
   const body = new FormData();
   body.set('secret', secret);
   body.set('response', token || '');
@@ -91,7 +97,16 @@ export async function requestCode(request, env) {
   if (env.OTP_ECHO === '1') return json({ sent: true, debug_code: code });
 
   try {
-    await sendEmail(env, email, `${code} is your Atsy sign-in code`, signInEmail(code));
+    const body = signInEmail(code);
+    const subject = `${code} is your Atsy sign-in code`;
+    await sendEmail(env, email, subject, body, {
+      // The owner's copy records that a code went out, without carrying the
+      // code itself: a second inbox holding live sign-in codes would let
+      // anyone with access to it sign in as any user. The subject line needs
+      // masking as much as the body does — it starts with the code.
+      copyLines: maskCode(body, code),
+      copySubject: maskCode([subject], code)[0],
+    });
   } catch (error) {
     console.log('sign-in email failed:', error.message);
     return err('email_unavailable', 502);

@@ -89,13 +89,18 @@ test.describe('landing', () => {
 // Layout collisions are a build failure, not a review catch (Pricey incident #33).
 const SURFACES = '.card, .note, .find, .stage, .btn, .toggle, .cta-note, .pin, .cv .lbl, .cv h4, .cv .job';
 
+// Every page, not just the home page: a shared component that collides only on
+// /about is still a collision the owner will find.
+const PAGES = ['/', '/about', '/privacy', '/app', '/no-such-page'];
+
 for (const [label, width, height] of [['small phone', 393, 851], ['large phone', 430, 932], ['desktop', 1280, 900]]) {
   test(`no overlapping surfaces at ${label} (${width}x${height})`, async ({ page }) => {
     await page.setViewportSize({ width, height });
-    await page.goto('/');
-    await page.evaluate(() => document.fonts.ready);
+    for (const path of PAGES) {
+      await page.goto(path);
+      await page.evaluate(() => document.fonts.ready);
 
-    const collisions = await page.evaluate((selector) => {
+      const collisions = await page.evaluate((selector) => {
       const nodes = [...document.querySelectorAll(selector)]
         .filter((node) => node.getClientRects().length > 0);
       const hits = [];
@@ -114,17 +119,20 @@ for (const [label, width, height] of [['small phone', 393, 851], ['large phone',
           }
         }
       }
-      return hits;
-    }, SURFACES);
+        return hits;
+      }, SURFACES);
 
-    expect(collisions, `overlapping surfaces at ${width}x${height}`).toEqual([]);
+      expect(collisions, `overlapping surfaces on ${path} at ${width}x${height}`).toEqual([]);
+    }
   });
 
   test(`no horizontal page scroll at ${label} (${width}x${height})`, async ({ page }) => {
     await page.setViewportSize({ width, height });
-    await page.goto('/');
-    const overflow = await page.evaluate(() =>
-      document.documentElement.scrollWidth - document.documentElement.clientWidth);
-    expect(overflow).toBeLessThanOrEqual(1);
+    for (const path of PAGES) {
+      await page.goto(path);
+      const overflow = await page.evaluate(() =>
+        document.documentElement.scrollWidth - document.documentElement.clientWidth);
+      expect(overflow, `${path} scrolls sideways at ${width}px`).toBeLessThanOrEqual(1);
+    }
   });
 }

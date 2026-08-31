@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>How the score works — Atsy</title>
+<title>How Atsy works — Atsy</title>
 <meta name="description" content="Atsy's scoring rubric is published: five pillars, deterministic checks, and an honest account of what an ATS score can and cannot tell you.">
 <meta name="theme-color" content="#FAF8F4" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#101116" media="(prefers-color-scheme: dark)">
@@ -13,7 +13,7 @@
 <meta property="og:site_name" content="Atsy">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://atsy.vibecod3.app/about">
-<meta property="og:title" content="How the Atsy score works">
+<meta property="og:title" content="How Atsy works">
 <meta property="og:description" content="Five pillars, every check published, and an honest account of what an ATS score can and cannot tell you.">
 <meta property="og:image" content="https://atsy.vibecod3.app/og-image.png">
 <meta property="og:image:type" content="image/png">
@@ -21,7 +21,7 @@
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="Atsy: a CV on the left, and the scrambled text a parser extracts from it on the right.">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="How the Atsy score works">
+<meta name="twitter:title" content="How Atsy works">
 <meta name="twitter:description" content="Five pillars, every check published, and an honest account of what an ATS score can and cannot tell you.">
 <meta name="twitter:image" content="https://atsy.vibecod3.app/og-image.png">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
@@ -76,19 +76,118 @@
     </div>
 
     <div class="card">
-      <h2 class="cardtitle">Read the rubric</h2>
-      <p>The whole specification is public, including every check, its weight, and the message you
-        would see: <a href="https://github.com/cayman-nz2/Atsy/blob/main/docs/SCORING-SPEC.md">the
-        scoring specification on GitHub</a>. If you think a check is wrong, say so — that is the
-        point of publishing it.</p>
+      <h2 class="cardtitle">Why Atsy is free</h2>
+      <p>Because the people who need it most are between jobs. There is no paid tier, no credit
+        pack and no upsell — the whole thing runs on infrastructure that costs a few dollars a
+        month, and it is built to stay that way: the scoring is plain arithmetic on your file, not
+        an expensive model call.</p>
+      <p>What that buys you: no reason for Atsy to hold your data, show you ads, or tell you your
+        CV is worse than it is.</p>
+    </div>
+
+    <h2 class="rubric-title">The full rubric</h2>
+    <p class="screen-lede">Every check, what it is worth, and what it means. Nothing here is
+      hidden, weighted secretly, or decided by a model.</p>
+
+    <details class="fold rubric">
+      <summary><span class="foldtitle">Parse &amp; structure &mdash; 35 points</span><span class="foldnote">Can the text be extracted at all, in the order you wrote it.</span></summary>
+      <dl>
+        <dt>P01 <span>caps your score at 25</span></dt><dd>The PDF has no text layer — it is a picture of a CV, and a parser reads nothing from it.</dd>
+        <dt>P02 <span>6</span></dt><dd>The page is in two columns, so extraction runs across the gutter and interleaves them.</dd>
+        <dt>P03 <span>3</span></dt><dd>The order the text is stored in does not match the order you read it.</dd>
+        <dt>P04 <span>3</span></dt><dd>Content sits in a running header or footer, the band parsers most often skip.</dd>
+        <dt>P05 <span>3</span></dt><dd>Content is in a table: cell order is not reading order.</dd>
+        <dt>P06 <span>2</span></dt><dd>A font is not embedded, so the text can extract as the wrong characters elsewhere.</dd>
+        <dt>P07 <span>2</span></dt><dd>The extracted text is corrupted — ligatures, missing character maps, or spaced-out glyphs.</dd>
+        <dt>P08 <span>2</span></dt><dd>Bullet characters come from an icon font and extract as junk.</dd>
+        <dt>P09 <span>1</span></dt><dd>Emoji in the text.</dd>
+        <dt>P10 <span>2</span></dt><dd>Skill ratings are graphics: a parser records nothing from them.</dd>
+        <dt>P11 <span>3</span></dt><dd>Section headings are not ones a parser recognises.</dd>
+        <dt>P12 <span>2</span></dt><dd>More than three pages, an unusual page size, or a very large file.</dd>
+        <dt>P13 <span>1</span></dt><dd>A filename that upload forms mangle, or a generic one like "resume.pdf".</dd>
+        <dt>P14 <span>caps your score at 40</span></dt><dd>Invisible or white-on-white text. Parsers see it and reviewers treat it as keyword stuffing.</dd>
+        <dt>P15 <span>1</span></dt><dd>Links exist only as annotations, with no visible URL.</dd>
+        <dt>P16 <span>2</span></dt><dd>Type set too small or too tight to survive a print or preview.</dd>
+        <dt>P17 <span>1</span></dt><dd>Mixed scripts, or no document language set.</dd>
+      </dl>
+    </details>
+
+    <details class="fold rubric">
+      <summary><span class="foldtitle">Contact &amp; identity &mdash; 10 points</span><span class="foldnote">Whether a recruiter can reach you, and whether the top of the page gives away more than it should.</span></summary>
+      <dl>
+        <dt>B01 <span>2</span></dt><dd>No name found on the first lines.</dd>
+        <dt>B02 <span>2</span></dt><dd>No email address.</dd>
+        <dt>B03 <span>2</span></dt><dd>No phone number, or one without a country code.</dd>
+        <dt>B04 <span>1</span></dt><dd>No city and country — or a full street address, which you do not need to give.</dd>
+        <dt>B05 <span>1</span></dt><dd>No LinkedIn or portfolio link in plain text.</dd>
+        <dt>B06 <span>1</span></dt><dd>Contact details only in the page header, where parsers often miss them.</dd>
+        <dt>B07 <span>0.5</span></dt><dd>A photo, in markets that do not expect one.</dd>
+        <dt>B08 <span>0.5</span></dt><dd>Date of birth, marital status or an ID number.</dd>
+      </dl>
+    </details>
+
+    <details class="fold rubric">
+      <summary><span class="foldtitle">Experience &amp; dates &mdash; 20 points</span><span class="foldnote">Whether your work history can be read as a history.</span></summary>
+      <dl>
+        <dt>C01 <span>5</span></dt><dd>A role without all three of title, employer and dates.</dd>
+        <dt>C02 <span>4</span></dt><dd>Dates in a format a parser cannot read, or two formats in one CV.</dd>
+        <dt>C03 <span>3</span></dt><dd>Roles not in reverse-chronological order.</dd>
+        <dt>C04 <span>2</span></dt><dd>An unexplained gap of more than six months.</dd>
+        <dt>C05 <span>1</span></dt><dd>The current role not marked "Present".</dd>
+        <dt>C06 <span>1</span></dt><dd>Dates that cannot be right — an end before a start, or a future start.</dd>
+        <dt>C07 <span>2</span></dt><dd>Job titles nobody searches for ("Ninja", "Guru", "Rockstar").</dd>
+        <dt>C08 <span>2</span></dt><dd>No education section, or one missing qualification, institution or year.</dd>
+      </dl>
+    </details>
+
+    <details class="fold rubric">
+      <summary><span class="foldtitle">Content &amp; impact &mdash; 25 points</span><span class="foldnote">Whether a person reading it would be persuaded.</span></summary>
+      <dl>
+        <dt>D01 <span>3</span></dt><dd>No summary, one that runs long, or one that says nothing specific.</dd>
+        <dt>D02 <span>4</span></dt><dd>Fewer than 80% of bullets start with an action verb.</dd>
+        <dt>D03 <span>5</span></dt><dd>Fewer than 40% of bullets contain a number: scale, money, time, or a change.</dd>
+        <dt>D04 <span>3</span></dt><dd>Bullets far outside 8&ndash;30 words, or paragraphs inside a role.</dd>
+        <dt>D05 <span>2</span></dt><dd>First-person pronouns.</dd>
+        <dt>D06 <span>2</span></dt><dd>Filler phrases: "responsible for", "duties included", "team player".</dd>
+        <dt>D07 <span>1</span></dt><dd>The same verb used more than three times.</dd>
+        <dt>D08 <span>1</span></dt><dd>Tense that switches between and within roles.</dd>
+        <dt>D09 <span>2</span></dt><dd>Typos, two spellings of the same word, or misspelt product names.</dd>
+        <dt>D10 <span>1</span></dt><dd>Bullets punctuated inconsistently.</dd>
+        <dt>D11 <span>1</span></dt><dd>Unusual acronyms never expanded.</dd>
+      </dl>
+    </details>
+
+    <details class="fold rubric">
+      <summary><span class="foldtitle">Skills presentation &mdash; 10 points</span><span class="foldnote">Whether your skills are findable text rather than decoration.</span></summary>
+      <dl>
+        <dt>E01 <span>4</span></dt><dd>No skills section.</dd>
+        <dt>E02 <span>2</span></dt><dd>Skills only inside a table, columns or graphics.</dd>
+        <dt>E03 <span>2</span></dt><dd>Fewer than six concrete skills, or nothing but soft skills.</dd>
+        <dt>E04 <span>1</span></dt><dd>A very long list, or skills that never appear in your experience.</dd>
+        <dt>E05 <span>1</span></dt><dd>Self-rated proficiency levels nobody can verify.</dd>
+      </dl>
+    </details>
+
+    <div class="card">
+      <h2 class="cardtitle">Score bands</h2>
+      <ul class="tightlist">
+        <li><strong>90&ndash;100 Excellent</strong> — parses cleanly everywhere we test. Work on content.</li>
+        <li><strong>75&ndash;89 Strong</strong> — safe on modern parsers, a few fixes left.</li>
+        <li><strong>60&ndash;74 Needs work</strong> — real risk of being mis-read. Fix the criticals.</li>
+        <li><strong>0&ndash;59 At risk</strong> — likely to be scrambled or dropped. Start at the top.</li>
+      </ul>
     </div>
   </div>
 </main>
 
 <footer class="foot">
   <div class="wrap">
-    <span>Atsy &middot; free CV scanner &middot; <span id="version">v0.3.0</span></span>
-    <span><a href="/privacy">Privacy</a> &middot; <a href="/">Home</a></span>
+    <span>Atsy &middot; free CV scanner &middot; <span id="version">v0.4.1</span></span>
+    <nav class="footnav" aria-label="More from Atsy">
+      <a href="/">Home</a>
+      <a href="/privacy">Privacy</a>
+      <a href="/app">Sign in</a>
+    </nav>
   </div>
 </footer>
 <script src="/app.js"></script>

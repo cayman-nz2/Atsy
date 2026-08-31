@@ -420,6 +420,52 @@ a:hover { text-decoration-thickness: 2px; }
 .foot { border-top: 1px solid var(--edge); padding: var(--s7) 0 var(--s8); color: var(--ink-3); font-size: 14px; }
 .foot .wrap { display: flex; flex-wrap: wrap; gap: var(--s4); justify-content: space-between; }
 .foot a { color: var(--ink-2); }
+.footnav { display: flex; flex-wrap: wrap; gap: var(--s4); }
+.footnav a { text-decoration: underline; text-underline-offset: 3px; }
+.footnav a:hover { color: var(--ink); }
+
+/* ---------- folds ---------- */
+.fold {
+  background: var(--card); border: 1px solid var(--edge); border-radius: var(--r-card);
+  padding: var(--s4) var(--s5); box-shadow: var(--shadow); margin-bottom: var(--s4);
+}
+/* Grid, not flex: with wrapping the chevron dropped onto the second line and
+   sat under the description instead of beside the title it opens. */
+.fold summary {
+  cursor: pointer; list-style: none;
+  display: grid; grid-template-columns: 1fr auto; column-gap: var(--s3); row-gap: var(--s1);
+  align-items: start; min-height: 44px; padding: var(--s2) 0;
+}
+.fold summary::-webkit-details-marker { display: none; }
+.fold summary::after {
+  content: ''; grid-column: 2; grid-row: 1; margin-top: 6px;
+  width: 9px; height: 9px;
+  border-right: 2px solid var(--ink-3); border-bottom: 2px solid var(--ink-3);
+  transform: rotate(45deg); transition: transform .16s ease;
+}
+.fold[open] summary::after { transform: rotate(-135deg); margin-top: 10px; }
+.foldtitle {
+  grid-column: 1; grid-row: 1;
+  font-family: var(--display); font-size: 17px; font-weight: 600; letter-spacing: -.01em;
+}
+.foldnote { grid-column: 1 / -1; grid-row: 2; color: var(--ink-3); font-size: 14px; }
+
+/* ---------- the published rubric ---------- */
+.rubric-title {
+  font-family: var(--display); font-size: clamp(22px, 3vw, 28px); font-weight: 600;
+  letter-spacing: -.02em; margin-top: var(--s7);
+}
+.rubric-note { color: var(--ink-3); font-size: 14.5px; }
+.rubric dl { display: grid; gap: var(--s3); margin: var(--s3) 0 0; }
+.rubric dt {
+  font-family: var(--mono); font-size: 12.5px; color: var(--ink-3);
+  display: flex; align-items: baseline; gap: var(--s2); flex-wrap: wrap;
+}
+.rubric dt span {
+  color: var(--signal); background: var(--signal-soft); border: 1px solid var(--signal-edge);
+  border-radius: 999px; padding: 1px 9px; font-size: 11.5px;
+}
+.rubric dd { margin: 2px 0 0; font-size: 15px; color: var(--ink-2); }
 
 /* ---------- small utilities (so no element needs a style attribute) ---------- */
 .mt-5 { margin-top: var(--s5); }

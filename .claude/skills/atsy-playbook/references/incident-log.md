@@ -229,3 +229,33 @@ Atsy's own incidents start at #36.
     an export named 'VERSION'`), but the second time is the point: an
     unremarkable slip repeated is a habit. → Edit files by reading fully into a
     variable first, then writing. Never nest a read inside the write call.
+
+48. **A provisioning step reported success on a failure.** `npx wrangler r2
+    bucket create … | tee r2.log` exits with *tee's* status, not wrangler's, so
+    a run that failed with "Please enable R2 through the Cloudflare Dashboard"
+    printed "atsy-cv is ready" and skipped the branch written to explain that
+    exact error. The truth was only two lines above it in the log. → Any
+    pipeline whose exit status is checked needs `set -o pipefail`. More
+    generally: a step that reports its own result must be tested against a
+    failing case, or it is only tested against the happy path — the same shape
+    as the deploy check that would have passed on two empty strings (#47's
+    neighbour in this log).
+
+49. **Nobody could sign in to the live site** (v0.4.1, owner hit it within
+    minutes of the first deploy: "The browser check did not pass"). Two
+    independent mistakes, both mine, both in the security work:
+    (a) The sign-in page's CSP allowed Turnstile's *script* and *frame* but
+    left `connect-src 'self'`, so the widget could load and never talk to its
+    own servers. No token was ever produced. The design spec had the right
+    policy written down — `connect-src 'self' https://challenges.cloudflare.com`
+    — and the value that shipped in `_headers` dropped it.
+    (b) With no secret configured, `verifyTurnstile` called siteverify with
+    Cloudflare's always-pass *test* secret. That looks harmless, but an empty
+    token still returns `missing-input-response`, so an unconfigured shield
+    refused every sign-in — failing closed for a reason that had nothing to do
+    with bots.
+    → An allowlist for a third-party embed covers every directive it needs, not
+    just the obvious one; copy the policy from the spec rather than retyping
+    it. A security control that is switched off must be *off*, not
+    half-configured — and any auth path that can refuse everyone needs a test
+    that proves a real person still gets through. Both now have one.

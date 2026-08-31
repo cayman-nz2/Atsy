@@ -31,6 +31,7 @@ jobs:
 
       - name: D1 database
         run: |
+          set -o pipefail
           echo "::group::create atsy-db"
           npx wrangler@4 d1 create atsy-db 2>&1 | tee d1.log || \
             echo "already exists, or the token lacks D1 edit"
@@ -50,6 +51,11 @@ jobs:
 
       - name: R2 bucket
         run: |
+          # pipefail, because `cmd | tee` reports tee's exit status: without it
+          # a failed creation was reported as "atsy-cv is ready" and the real
+          # error was never read. A provisioning step that lies about its
+          # result is worse than one that fails.
+          set -o pipefail
           if npx wrangler@4 r2 bucket create atsy-cv 2>&1 | tee r2.log; then
             echo "atsy-cv is ready"
           elif grep -q "10042" r2.log; then
@@ -64,7 +70,31 @@ jobs:
       - name: Turnstile widget
         run: |
           api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/challenges/widgets"
+
+          # Report what the token can and cannot do, separately. Without this
+          # a read failure and a write failure look identical from the log,
+          # and the fix for each is different.
           existing=$(curl -sS -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" "$api" || echo '{}')
+          node -e "
+            let data = {};
+            try { data = JSON.parse(process.argv[1]); } catch {}
+            if (data.success) {
+              console.log('token can list Turnstile widgets: ' + (data.result || []).length + ' found');
+            } else {
+              console.log('token CANNOT list Turnstile widgets: ' + JSON.stringify(data.errors || data));
+            }
+          " "$existing"
+
+          # What the token is actually allowed to do, in Cloudflare's own words.
+          curl -sS -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            "https://api.cloudflare.com/client/v4/user/tokens/verify" > verify.json || true
+          node -e "
+            const fs = require('fs');
+            let data = {};
+            try { data = JSON.parse(fs.readFileSync('verify.json', 'utf8')); } catch {}
+            console.log('token status: ' + JSON.stringify((data.result || {}).status || data.errors || 'unknown'));
+          "
+
           sitekey=$(node -e "
             let data = {};
             try { data = JSON.parse(process.argv[1]); } catch {}
