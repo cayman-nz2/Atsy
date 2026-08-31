@@ -990,6 +990,9 @@ await test('a bucket that will not accept the file fails the scan, not the recor
   const user = testUser(env);
   const response = await createScan(uploadRequest(fixture('clean')), env, user);
   assert.equal(response.status, 502);
+  // The code must say what actually failed: reporting a storage outage as an
+  // unreadable PDF sends the next person straight to the parser.
+  assert.equal((await response.json()).error, 'storage_failed');
   const row = env.DB.prepare('SELECT status, failure_reason, r2_key FROM scans').first();
   assert.equal(row.status, 'failed');
   assert.equal(row.failure_reason, 'storage');

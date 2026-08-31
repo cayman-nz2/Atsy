@@ -285,14 +285,19 @@ export async function createScan(request, env, user) {
     created + fileRetentionSeconds(env), created + recordRetentionSeconds(env),
   ).run();
 
-  const fail = async (reason, status = 422) => {
+  // Every way a scan can stop after the row exists: mark the row, drop the
+  // object, and answer with a message written for the reader. `code` is what
+  // the client keys on and must stay true to what happened — a storage
+  // failure reported as `unreadable_pdf` would send the next person debugging
+  // it straight to the parser, which was never involved.
+  const fail = async (reason, { status = 422, code = 'unreadable_pdf' } = {}) => {
     await env.DB.prepare(
       "UPDATE scans SET status = 'failed', failure_reason = ?, r2_key = NULL WHERE id = ? AND user_id = ?",
     ).bind(reason, scanId, user.id).run();
     // A file that could not be scanned has no second use, so it does not wait
     // for the retention window to expire.
     if (env.CV) await env.CV.delete(key).catch(() => {});
-    return json({ error: 'unreadable_pdf', reason, message: failureMessage(reason) }, status);
+    return json({ error: code, reason, message: failureMessage(reason) }, status);
   };
 
   try {
@@ -304,7 +309,7 @@ export async function createScan(request, env, user) {
     });
   } catch (error) {
     console.log('scan storage failed:', error && error.message);
-    return fail('storage', 502);
+    return fail('storage', { status: 502, code: 'storage_failed' });
   }
 
   let model;
