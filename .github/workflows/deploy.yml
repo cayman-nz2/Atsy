@@ -21,6 +21,10 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-latest
+    # A hung step has no natural end: GitHub's default is six hours, so a
+    # wedged runner blocks every deploy behind it for the rest of the day
+    # rather than failing and being re-run. The whole job takes ~90 seconds.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
 
@@ -38,8 +42,27 @@ jobs:
       - name: Unit tests
         run: npm test
 
+      # `--with-deps` runs apt-get, which is the one step here that depends on a
+      # mirror rather than on this repository. It has hung for 30+ minutes with
+      # no output while the identical commit installed in 24 seconds minutes
+      # earlier, so it is bounded and has a fallback: the ubuntu-latest image
+      # already carries Chromium's shared libraries, and the browser download
+      # itself does not need apt.
+      #
+      # This does not weaken the gate. If the browser cannot actually run, the
+      # end-to-end step below fails exactly as it would have.
       - name: Install Playwright browser
+        id: playwright
+        timeout-minutes: 6
+        continue-on-error: true
         run: npx playwright install --with-deps chromium
+
+      - name: Install Playwright browser without the apt step
+        if: steps.playwright.outcome != 'success'
+        timeout-minutes: 6
+        run: |
+          echo "::warning::installing Chromium with system deps did not finish; retrying without apt"
+          npx playwright install chromium
 
       # Journeys, the layout-overlap gate, the horizontal-scroll gate and the
       # stale-build gate all run here against a real `wrangler dev`.
