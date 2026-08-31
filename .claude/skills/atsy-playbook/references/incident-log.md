@@ -393,6 +393,8 @@ Atsy's own incidents start at #36.
     that measurement does not support. What is known: one dead dev server
     invalidates every test after it, so a run with a `[WebServer]` error
     followed by a wall of `ERR_CONNECTION_REFUSED` is *one* incident — read the
-    first failure, never the count. If this recurs, the next thing to try is
-    capturing `~/.config/.wrangler/logs/*.log` as a CI artifact, which is where
-    workerd wrote its side of the story and which this run discarded.
+    first failure, never the count. And workerd's own log is the one account of
+    why it died, which this run discarded — so the test job now copies
+    `$HOME/.config/.wrangler/logs/` and `test-results/` into an artifact on any
+    failure. A diagnostic gap you have already identified is a thing to close,
+    not a note to leave for the next person to hit it.
