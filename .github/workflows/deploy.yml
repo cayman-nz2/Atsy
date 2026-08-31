@@ -46,6 +46,28 @@ jobs:
       - name: End-to-end tests
         run: npm run e2e
 
+      # When the dev server dies mid-suite, every test after it fails with
+      # ERR_CONNECTION_REFUSED and the one useful account of what happened is
+      # workerd's own log — which the runner then throws away. That is exactly
+      # what made incident 59 unexplainable, so keep it.
+      - name: Collect the dev server's log when the suite fails
+        if: failure()
+        run: |
+          mkdir -p e2e-logs
+          cp -r "$HOME/.config/.wrangler/logs/." e2e-logs/ 2>/dev/null || true
+          echo "collected:"; ls -la e2e-logs 2>/dev/null || echo "  (no wrangler logs found)"
+
+      - name: Upload the failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-failure-evidence
+          path: |
+            e2e-logs
+            test-results
+          retention-days: 7
+          if-no-files-found: ignore
+
   deploy:
     needs: test
     runs-on: ubuntu-latest
