@@ -3,6 +3,15 @@
 // RELEASES[0].version === VERSION — bump both together, every release.
 export const RELEASES = [
   {
+    version: '0.6.0',
+    date: '2026-08-31',
+    notes: [
+      'Upload a CV and see exactly what an applicant tracking system reads out of it — columns, sections, dates, contact details, and any text hidden from the reader.',
+      'Your CV is encrypted before it is stored, deleted automatically after 24 hours, and the text inside it is never saved.',
+      'Every scan can be deleted on the spot, and deleting your account now takes every stored CV with it.',
+    ],
+  },
+  {
     version: '0.5.0',
     date: '2026-08-31',
     notes: [

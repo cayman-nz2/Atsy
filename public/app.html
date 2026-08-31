@@ -93,10 +93,43 @@
       <p class="screen-lede">Signed in as <strong id="account-email"></strong>.</p>
 
       <div class="card">
-        <h2 class="cardtitle">Scanning arrives next</h2>
-        <p>Uploads and scoring are the next release. Nothing about your CV is stored yet, because
-          there is nothing to store — the only thing Atsy holds today is the email address you
-          just used.</p>
+        <h2 class="cardtitle">Scan your CV</h2>
+        <p>A PDF, up to 5 MB and 10 pages. Atsy reads it the way an applicant tracking
+          system does and tells you what came through.</p>
+
+        <form class="form" id="form-upload" novalidate>
+          <div class="drop" id="drop">
+            <input class="dropinput" type="file" id="file" name="file" accept="application/pdf,.pdf">
+            <label class="droplabel" for="file">
+              <span class="dropstrong">Choose a PDF</span>
+              <span class="dropnote">or drag it here</span>
+            </label>
+            <p class="dropfile" id="drop-file" hidden></p>
+          </div>
+          <div id="upload-turnstile" class="turnstile-slot"></div>
+          <p class="formerror" id="upload-error" role="alert" hidden></p>
+          <button class="btn btn-primary" type="submit" id="upload-submit">Scan this CV</button>
+          <p class="fineprint">The file is encrypted before it is stored and deleted automatically
+            after 24 hours. The text inside it is never saved.</p>
+        </form>
+      </div>
+
+      <div class="card" id="card-read" hidden>
+        <h2 class="cardtitle">What a parser read</h2>
+        <p class="readfile"><span class="readname" id="read-file"></span></p>
+        <dl class="reads" id="read-facts"></dl>
+        <p class="note" id="read-verdict"></p>
+        <div class="quietrow">
+          <a class="btn btn-quiet" id="read-download" href="#" target="_blank" rel="noopener">Open the stored copy</a>
+          <button class="btn btn-quiet" type="button" id="read-delete">Delete this scan</button>
+        </div>
+        <p class="fineprint">Scoring — the 49 checks and the fix list — is the next release.
+          Atsy will not show you a score it has not actually computed.</p>
+      </div>
+
+      <div class="card" id="card-history" hidden>
+        <h2 class="cardtitle">Your scans</h2>
+        <ul class="tightlist" id="history-list"></ul>
       </div>
 
       <div class="card">
@@ -104,7 +137,8 @@
         <ul class="tightlist">
           <li>Email address — kept until you delete your account</li>
           <li>Country, from the network request — used for nothing but counting sign-ups</li>
-          <li>No CV, no file, no scan history yet</li>
+          <li>Each CV you upload, encrypted, for 24 hours — then the file is deleted</li>
+          <li>What Atsy read about the layout of each CV, for 30 days — never the text itself</li>
         </ul>
         <p class="fineprint">Deleting is immediate and cannot be undone.</p>
         <div class="quietrow">
@@ -120,7 +154,7 @@
 
 <footer class="foot">
   <div class="wrap">
-    <span>Atsy &middot; free CV scanner &middot; <span id="version">v0.5.0</span></span>
+    <span>Atsy &middot; free CV scanner &middot; <span id="version">v0.6.0</span></span>
     <nav class="footnav" aria-label="More from Atsy">
       <a href="/">Home</a>
       <a href="/about">How it works</a>

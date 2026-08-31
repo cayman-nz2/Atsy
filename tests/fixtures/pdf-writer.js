@@ -29,9 +29,16 @@ function imageToStream({ x, y, w, h }, name) {
   return `q ${w} 0 0 ${h} ${x} ${y} cm /${name} Do Q`;
 }
 
+// A filled rectangle. Real CVs draw these as rating bars, sidebar panels and
+// table rules, and a parser reads none of them — which is the whole point of
+// the fixture that uses them.
+function rectToStream({ x, y, w, h, rgb = [0.2, 0.2, 0.2] }) {
+  return `q ${rgb[0]} ${rgb[1]} ${rgb[2]} rg ${x} ${y} ${w} ${h} re f Q`;
+}
+
 /**
  * Build a PDF from a declarative page description.
- * pages: [{ width, height, runs: [...], images: [{x,y,w,h}] }]
+ * pages: [{ width, height, runs: [...], images: [{x,y,w,h}], rects: [{x,y,w,h,rgb}] }]
  */
 export function writePdf({ pages, info = {} }) {
   const objects = [];
@@ -56,6 +63,7 @@ export function writePdf({ pages, info = {} }) {
     ));
 
     const stream = [
+      ...(page.rects || []).map(rectToStream),
       ...(page.runs || []).map(runToStream),
       ...images.map((image, index) => imageToStream(image, `Im${imageNumbers[index]}`)),
     ].join('\n');

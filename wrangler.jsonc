@@ -29,6 +29,9 @@
   // Sends the sign-in codes. vibecod3.app is already onboarded as a sending
   // domain, so this needs no secret.
   "send_email": [{ "name": "SEND_EMAIL" }],
+  // Retention sweep. Every 30 minutes, so a file is never more than half an
+  // hour past its window. See src/retention.js.
+  "triggers": { "crons": ["*/30 * * * *"] },
   "vars": {
     // OTP_ECHO and TURNSTILE_BYPASS are local/E2E flags passed with
     // `wrangler dev --var`. They must NEVER appear in this file.
@@ -43,8 +46,13 @@
     // Turnstile site keys are public. This is the real widget for
     // atsy.vibecod3.app, created by the provision workflow; its secret lives
     // only as a Worker secret and was never printed.
-    "TURNSTILE_SITE_KEY": "0x4AAAAAAEivQffZlB2yC1wA"
+    "TURNSTILE_SITE_KEY": "0x4AAAAAAEivQffZlB2yC1wA",
+    // Retention windows, in the units the promise on /privacy is written in.
+    // Overridable so a test can prove the sweep works without waiting a day.
+    "FILE_RETENTION_HOURS": "24",
+    "RECORD_RETENTION_DAYS": "30"
   }
   // Added in later milestones:
-  //   M2  ai binding, ratelimits, cron trigger for the retention sweep
+  //   M3  the skills taxonomy in D1
+  //   M5  ai binding for bullet rewrites (never for scoring), ai_usage budget
 }

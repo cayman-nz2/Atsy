@@ -113,18 +113,60 @@ jobs:
           # parse an assets Worker config ("Missing entry-point"). Pin 4.x.
           wranglerVersion: "4.118.0"
 
-      # Step-scoped so the secret is never in the environment of npm ci or any
-      # other step that runs third-party code.
-      - name: Check the Turnstile secret is present
+      # The secrets that matter are the ones on the Worker, not the ones in
+      # GitHub. Provisioning writes TURNSTILE_SECRET_KEY, CV_MASTER_KEY and
+      # IP_HASH_SALT straight to the Worker with `wrangler secret put`, so they
+      # deliberately have no GitHub counterpart. Checking GitHub alone reported
+      # "the bot shield is OFF" on a deploy where the shield was on — a warning
+      # that lies in the safe-sounding direction is worse than none. Ask the
+      # Worker, and warn only about what is genuinely absent there.
+      - name: Check the Worker's secrets are in place
+        id: worker_secrets
+        if: steps.creds.outputs.ready == 'yes' && steps.db.outputs.ready == 'yes'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -o pipefail
+          # `secret list` prints names only — never values — so this is safe to
+          # capture. A failure here must not read as "no secrets": distinguish
+          # the two, because they call for opposite responses.
+          if ! names=$(npx wrangler@4.118.0 secret list --name atsy 2>/dev/null); then
+            echo "::warning::could not list the Worker's secrets — skipping the check rather than guessing at it"
+            echo "checked=no" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "checked=yes" >> "$GITHUB_OUTPUT"
+          for name in TURNSTILE_SECRET_KEY CV_MASTER_KEY IP_HASH_SALT; do
+            if echo "$names" | grep -q "\"$name\""; then
+              echo "$name is set on the Worker"
+            else
+              case "$name" in
+                TURNSTILE_SECRET_KEY)
+                  echo "::warning::TURNSTILE_SECRET_KEY is missing from the Worker — the bot shield is OFF (rate limits still apply). Run the Provision workflow." ;;
+                CV_MASTER_KEY)
+                  echo "::warning::CV_MASTER_KEY is missing from the Worker — CV uploads will fail closed rather than store anything unencrypted. Run the Provision workflow." ;;
+                IP_HASH_SALT)
+                  echo "::warning::IP_HASH_SALT is missing from the Worker — rate-limit hashes fall back to a known development salt. Run the Provision workflow." ;;
+              esac
+            fi
+          done
+
+      # Kept as a recovery path: if provisioning could not create the widget
+      # (no Turnstile:Edit on the token), the owner adds the secret to GitHub
+      # instead and this syncs it. Normally there is nothing to sync, and that
+      # is not a problem — the check above is what reports a real gap.
+      #
+      # The presence test needs its own step because the `secrets` context is
+      # not available in a step-level `if`; only an output from a prior step is.
+      - name: Look for a GitHub-held Turnstile secret
         id: ts
         if: steps.creds.outputs.ready == 'yes' && steps.db.outputs.ready == 'yes'
         env:
           TS: ${{ secrets.TURNSTILE_SECRET_KEY }}
-        run: |
-          echo "has=${TS:+yes}" >> "$GITHUB_OUTPUT"
-          if [ -z "$TS" ]; then echo "::warning::TURNSTILE_SECRET_KEY is not set — the Worker falls back to the always-pass test secret, so the bot shield is OFF"; fi
+        run: echo "has=${TS:+yes}" >> "$GITHUB_OUTPUT"
 
-      - name: Sync the Turnstile secret to the Worker
+      - name: Sync the GitHub-held Turnstile secret to the Worker
         if: steps.ts.outputs.has == 'yes'
         uses: cloudflare/wrangler-action@v3
         env:
@@ -136,16 +178,14 @@ jobs:
           secrets: |
             TURNSTILE_SECRET_KEY
 
-      - name: Check the IP hash salt is present
+      - name: Look for a GitHub-held IP hash salt
         id: salt
         if: steps.creds.outputs.ready == 'yes' && steps.db.outputs.ready == 'yes'
         env:
           SALT: ${{ secrets.IP_HASH_SALT }}
-        run: |
-          echo "has=${SALT:+yes}" >> "$GITHUB_OUTPUT"
-          if [ -z "$SALT" ]; then echo "::warning::IP_HASH_SALT is not set — rate-limit hashes fall back to a known development salt"; fi
+        run: echo "has=${SALT:+yes}" >> "$GITHUB_OUTPUT"
 
-      - name: Sync the IP hash salt to the Worker
+      - name: Sync the GitHub-held IP hash salt to the Worker
         if: steps.salt.outputs.has == 'yes'
         uses: cloudflare/wrangler-action@v3
         env:

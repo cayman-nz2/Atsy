@@ -199,6 +199,116 @@ export const FIXTURES = {
     });
     return writePdf({ pages: [{ ...A4, runs }] });
   },
+
+  // No way to reach the candidate. Every other CV in the corpus has contact
+  // details somewhere; this one has a name and nothing else, which is a
+  // rejection at the first screen no matter how good the rest is.
+  noContact: () => writePdf({
+    pages: [{
+      ...A4,
+      runs: column({
+        x: 57, top: 60, pageHeight: A4.height,
+        lines: CLEAN_LINES.filter((line) => !line.includes('@') && !line.includes('linkedin')),
+      }),
+    }],
+  }),
+
+  // Contact details in the bottom band. Visually fine, and in the region a
+  // parser is most likely to treat as a running foot and discard.
+  footerContact: () => writePdf({
+    pages: [{
+      ...A4,
+      runs: [
+        ...column({
+          x: 57, top: 60, pageHeight: A4.height,
+          lines: CLEAN_LINES.filter((line) => !line.includes('@') && !line.includes('linkedin')),
+        }),
+        { text: 'priya.raman@example.com | +64 21 555 0134', x: 57, y: 22, size: 9 },
+      ],
+    }],
+  }),
+
+  // A running head and foot on all three pages: the pattern a parser detects
+  // and strips, taking whatever was put there with it.
+  runningHeadFoot: () => {
+    const chunk = (start) => CLEAN_LINES.slice(start, start + 12);
+    return writePdf({
+      pages: [0, 12, 24].map((start) => ({
+        ...A4,
+        runs: [
+          { text: 'Priya Raman - Curriculum Vitae', x: 57, y: A4.height - 22, size: 9 },
+          ...column({ x: 57, top: 90, lines: chunk(start), pageHeight: A4.height }),
+          { text: 'Confidential - page of 3', x: 57, y: 22, size: 9 },
+        ],
+      })),
+    });
+  },
+
+  // No headings at all: one continuous block. A human can read it; a parser
+  // has nothing to hang a section model on, so nothing is found where it is
+  // expected to be.
+  noSections: () => writePdf({
+    pages: [{
+      ...A4,
+      runs: column({
+        x: 57, top: 60, pageHeight: A4.height,
+        lines: CLEAN_LINES.filter((line) => line && line !== line.toUpperCase()),
+      }),
+    }],
+  }),
+
+  // Chronological rather than reverse-chronological: the oldest role first.
+  // Every screen a recruiter runs assumes the opposite.
+  oldestFirst: () => {
+    const lines = [
+      ...CLEAN_LINES.slice(0, CLEAN_LINES.indexOf('EXPERIENCE') + 1),
+      'Team Lead, Southbound Freight',
+      'Jun 2019 - Feb 2023',
+      'Managed rosters for 24 staff across 3 sites, saving $180k a year in overtime.',
+      'Negotiated 12 supplier contracts, cutting freight cost per unit by 18%.',
+      '',
+      'Operations Manager, Kauri Logistics',
+      'Mar 2023 - Present',
+      'Lifted on-time delivery from 82% to 96% across 14 depots in 9 months.',
+      'Cut dispatch errors by 41% by rebuilding the pick-and-pack process.',
+      '',
+      ...CLEAN_LINES.slice(CLEAN_LINES.indexOf('EDUCATION')),
+    ];
+    return writePdf({ pages: [{ ...A4, runs: column({ x: 57, top: 60, lines, pageHeight: A4.height }) }] });
+  },
+
+  // Nineteen months between the two roles. Not a defect in itself — the point
+  // is that Atsy can see it, so it can say so before a recruiter does.
+  careerGap: () => writePdf({
+    pages: [{
+      ...A4,
+      runs: column({
+        x: 57, top: 60, pageHeight: A4.height,
+        lines: CLEAN_LINES.map((line) =>
+          (line === 'Jun 2019 - Feb 2023' ? 'Jun 2017 - Aug 2021' : line)),
+      }),
+    }],
+  }),
+
+  // Seven-point body text: squeezed onto one page at the cost of being
+  // unreadable on a phone, which is where most first screens now happen.
+  tinyType: () => writePdf({
+    pages: [{
+      ...A4,
+      runs: column({ x: 57, top: 60, lines: CLEAN_LINES, size: 7, leading: 10, pageHeight: A4.height }),
+    }],
+  }),
+
+  // Skills as rating bars: five filled rectangles and no text. The reader sees
+  // "advanced SQL"; the parser sees an empty skills section.
+  skillBars: () => {
+    const lines = CLEAN_LINES.slice(0, CLEAN_LINES.indexOf('SKILLS') + 1);
+    const runs = column({ x: 57, top: 60, lines, pageHeight: A4.height });
+    const rects = [0, 1, 2, 3, 4].map((row) => ({
+      x: 57, y: 150 - row * 18, w: 60 + row * 30, h: 8, rgb: [0.15, 0.15, 0.15],
+    }));
+    return writePdf({ pages: [{ ...A4, runs, rects }] });
+  },
 };
 
 const cache = new Map();

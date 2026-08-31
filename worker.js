@@ -7,6 +7,10 @@
 import { VERSION } from './src/version.js';
 import { json, err } from './src/util.js';
 import { requestCode, verifyCode, currentUser, logout, deleteAccount } from './src/auth.js';
+import {
+  createScan, listScans, getScan, getScanFile, deleteScan, MAX_UPLOAD_BYTES,
+} from './src/scan.js';
+import { runRetention } from './src/retention.js';
 
 // Routes that need a signed-in user. Everything else is public.
 async function withUser(request, env, handler) {
@@ -26,7 +30,13 @@ export default {
     // Public, non-secret configuration the front end needs. The Turnstile site
     // key is public by design; its secret never leaves the Worker.
     if (path === '/api/config') {
-      return json({ version: VERSION, turnstileSiteKey: env.TURNSTILE_SITE_KEY || '' });
+      return json({
+        version: VERSION,
+        turnstileSiteKey: env.TURNSTILE_SITE_KEY || '',
+        // The client enforces the same limit before spending a minute on an
+        // upload the Worker would refuse. One source, so the two agree.
+        maxUploadBytes: MAX_UPLOAD_BYTES,
+      });
     }
 
     if (path === '/api/auth/request-code' && method === 'POST') return requestCode(request, env);
@@ -39,6 +49,30 @@ export default {
     }
     if (path === '/api/me' && method === 'DELETE') {
       return withUser(request, env, (user) => deleteAccount(request, env, user));
+    }
+
+    if (path === '/api/scans' && method === 'POST') {
+      return withUser(request, env, (user) => createScan(request, env, user));
+    }
+    if (path === '/api/scans' && method === 'GET') {
+      return withUser(request, env, (user) => listScans(request, env, user));
+    }
+
+    // Scan ids are 32 hex characters. Matching the shape here means a
+    // malformed id is a 404 from the router rather than a database round trip.
+    const scanPath = path.match(/^\/api\/scans\/([0-9a-f]{32})(\/file)?$/);
+    if (scanPath) {
+      const [, scanId, fileSuffix] = scanPath;
+      if (fileSuffix && method === 'GET') {
+        return withUser(request, env, (user) => getScanFile(request, env, user, scanId));
+      }
+      if (!fileSuffix && method === 'GET') {
+        return withUser(request, env, (user) => getScan(request, env, user, scanId));
+      }
+      if (!fileSuffix && method === 'DELETE') {
+        return withUser(request, env, (user) => deleteScan(request, env, user, scanId));
+      }
+      return err('method_not_allowed', 405);
     }
 
     if (path.startsWith('/api/')) return err('not_found', 404);
@@ -58,5 +92,11 @@ export default {
       }
     }
     return new Response('Not found', { status: 404, headers: { 'content-type': 'text/plain' } });
+  },
+
+  // Retention is not a policy anyone has to remember: it runs every thirty
+  // minutes and deletes what is past its window. See src/retention.js.
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(runRetention(env));
   },
 };
