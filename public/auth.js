@@ -7,22 +7,32 @@
     email: document.getElementById('screen-email'),
     code: document.getElementById('screen-code'),
     account: document.getElementById('screen-account'),
+    result: document.getElementById('screen-result'),
   };
   if (!screens.email) return;
 
   var state = { email: '', siteKey: '', maxUploadBytes: 5 * 1024 * 1024 };
+  var currentScanId = null;
+
+  var TITLES = { email: 'Sign in', code: 'Sign in', account: 'Your account', result: 'Your score' };
 
   function show(name, push) {
     Object.keys(screens).forEach(function (key) { screens[key].hidden = key !== name; });
-    document.title = (name === 'account' ? 'Your account' : 'Sign in') + ' — Atsy';
+    document.title = (TITLES[name] || 'Sign in') + ' — Atsy';
     if (push) history.pushState({ screen: name }, '', name === 'email' ? '/app' : '/app#' + name);
-    var focusable = screens[name].querySelector('input, button');
+    // A new screen starts at the top. Landing halfway down a score screen
+    // because the previous one was scrolled is the kind of thing that reads as
+    // a broken page.
+    window.scrollTo({ top: 0 });
+    var focusable = screens[name].querySelector('input, button, a[href]');
     if (focusable) focusable.focus({ preventScroll: true });
   }
 
   window.addEventListener('popstate', function (event) {
     var name = (event.state && event.state.screen) || 'email';
-    if (name === 'account' && !screens.account.dataset.ready) name = 'email';
+    if ((name === 'account' || name === 'result') && !screens.account.dataset.ready) name = 'email';
+    // Going back to a result that has been deleted would show an empty screen.
+    if (name === 'result' && !currentScanId) name = 'account';
     show(name, false);
   });
 
@@ -373,6 +383,165 @@
     });
   }
 
+  // --- the results screen -------------------------------------------------
+
+  var BAND_LEDE = {
+    excellent: 'This CV comes through machine reading intact. What is left is polish.',
+    strong: 'A machine can read this. A few fixes would move it into the top band.',
+    work: 'A machine is losing part of this CV. The fixes below are worth real points.',
+    risk: 'Most systems will read this badly or not at all. Start at the top of the list.',
+  };
+  var SEVERITY_WORD = { critical: 'Critical', major: 'Major', minor: 'Minor' };
+
+  function el(tag, className, text) {
+    var node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined && text !== null) node.textContent = text;
+    return node;
+  }
+
+  function renderScore(result, scan) {
+    var dial = document.getElementById('score-dial');
+    // Set through the CSSOM, not a style attribute: the page's own CSP forbids
+    // inline styles, and rightly so (incident 39).
+    dial.style.setProperty('--pct', String(result.score));
+    dial.setAttribute('data-band', result.band);
+    dial.setAttribute('role', 'img');
+    dial.setAttribute('aria-label', result.score + ' out of 100 — ' + result.band);
+    document.getElementById('score-number').textContent = String(result.score);
+
+    var bandLabel = { excellent: 'Excellent', strong: 'Strong', work: 'Needs work', risk: 'At risk' };
+    document.getElementById('score-band').textContent = bandLabel[result.band] || '—';
+    document.getElementById('score-lede').textContent = BAND_LEDE[result.band] || '';
+    document.getElementById('score-file').textContent = scan.filename + ' · ' + bytes(scan.file_bytes)
+      + ' · ' + scan.page_count + (scan.page_count === 1 ? ' page' : ' pages');
+
+    var cap = document.getElementById('score-cap');
+    if (result.caps && result.caps.length) {
+      cap.textContent = 'Your score is capped at ' + result.score + ' because '
+        + result.caps.map(function (c) { return c.title.toLowerCase(); }).join(' and ')
+        + '. Without that cap it would have scored ' + result.rawScore
+        + '. Fix it and the rest of your score becomes visible.';
+      cap.hidden = false;
+    } else {
+      cap.hidden = true;
+    }
+  }
+
+  function renderPillars(result) {
+    var list = document.getElementById('pillar-list');
+    list.textContent = '';
+    result.pillars.forEach(function (pillar) {
+      var share = pillar.weight ? pillar.score / pillar.weight : 1;
+      var percent = share * 100;
+      var band = percent >= 90 ? 'excellent'
+        : (percent >= 75 ? 'strong' : (percent >= 60 ? 'work' : 'risk'));
+      var item = el('li');
+      var row = el('div', 'pillarrow');
+      var name = el('b', null, pillar.name);
+      var num = el('span', 'pillarnum', pillar.score + ' / ' + pillar.weight);
+      row.appendChild(name);
+      row.appendChild(num);
+      var bar = el('div', 'pillarbar');
+      bar.setAttribute('data-band', band);
+      var fill = el('span');
+      fill.style.width = Math.round(share * 100) + '%';
+      bar.appendChild(fill);
+      var why = el('p', 'fineprint', pillar.question);
+      item.appendChild(row);
+      item.appendChild(bar);
+      item.appendChild(why);
+      list.appendChild(item);
+    });
+  }
+
+  function fixCard(finding) {
+      var item = el('li');
+      var head = el('div', 'fixhead');
+      var chip = el('span', 'chip', SEVERITY_WORD[finding.severity] || finding.severity);
+      chip.setAttribute('data-severity', finding.severity);
+      head.appendChild(chip);
+      head.appendChild(el('span', 'fixtitle', finding.title));
+      head.appendChild(el('span', 'fixcost', finding.fatal
+        ? 'caps your score'
+        : (finding.points === 1 ? '1 point' : finding.points + ' points')));
+    item.appendChild(head);
+    item.appendChild(el('p', null, finding.message));
+    if (finding.evidence.length) {
+      var ev = el('ul', 'fixev');
+      finding.evidence.forEach(function (piece) {
+        ev.appendChild(el('li', null, 'page ' + piece.page + ' — ' + piece.text));
+      });
+      item.appendChild(ev);
+    }
+    return item;
+  }
+
+  function renderFixes(result) {
+    var list = document.getElementById('fix-list');
+    var none = document.getElementById('fix-none');
+    var minorFold = document.getElementById('fix-minor-fold');
+    var minorList = document.getElementById('fix-minor');
+    var minorCount = document.getElementById('fix-minor-count');
+    list.textContent = '';
+    minorList.textContent = '';
+    none.hidden = result.findings.length > 0;
+
+    // The things worth real points are shown; the one-pointers are folded
+    // away. Eleven full-width cards is six screens of scrolling, and burying
+    // the critical fix under a pile of polish is how a reader gives up.
+    var worthPoints = result.findings.filter(function (f) { return f.severity !== 'minor'; });
+    var polish = result.findings.filter(function (f) { return f.severity === 'minor'; });
+
+    worthPoints.forEach(function (finding) { list.appendChild(fixCard(finding)); });
+    polish.forEach(function (finding) { minorList.appendChild(fixCard(finding)); });
+
+    minorFold.hidden = polish.length === 0;
+    minorCount.textContent = polish.length === 1
+      ? 'One smaller thing'
+      : polish.length + ' smaller things';
+    if (!worthPoints.length && polish.length) {
+      none.textContent = 'Nothing serious. Only the smaller things below.';
+      none.hidden = false;
+    } else {
+      none.textContent = 'Nothing to fix. This CV came through cleanly.';
+    }
+  }
+
+  function renderEngines(result) {
+    var list = document.getElementById('engine-list');
+    list.textContent = '';
+    result.engines.forEach(function (engine) {
+      var item = el('li');
+      var head = el('div', 'enginehead');
+      head.appendChild(el('span', 'enginename', engine.name));
+      var risk = el('span', 'risk', engine.band + ' risk');
+      risk.setAttribute('data-band', engine.band);
+      head.appendChild(risk);
+      item.appendChild(head);
+      item.appendChild(el('p', null, engine.reasons.length
+        ? 'Because ' + engine.reasons.join(', and ') + '.'
+        : 'Nothing in this CV is a known problem for this parser.'));
+      list.appendChild(item);
+    });
+    document.getElementById('engine-disclaimer').textContent = result.engineDisclaimer || '';
+  }
+
+  function renderMachineView(machine) {
+    var box = document.getElementById('machine-view');
+    box.textContent = '';
+    if (!machine || !machine.lines.length) {
+      box.appendChild(el('p', 'foldnote', 'Nothing was extracted from this file.'));
+      return;
+    }
+    machine.lines.forEach(function (line) {
+      box.appendChild(el('div', 'mline', line.text));
+    });
+    if (machine.truncated) {
+      box.appendChild(el('p', 'foldnote', 'Showing the first ' + machine.lines.length + ' pieces of text.'));
+    }
+  }
+
   // The facts worth showing, in the order they matter to whether a CV survives
   // a parser. Each row carries its own verdict, so a number the reader cannot
   // interpret is never shown on its own.
@@ -427,29 +596,10 @@
     ];
   }
 
-  function verdictFor(model) {
-    var problems = [];
-    if (model.layout.multiColumn) problems.push('the columns');
-    if (model.sections.missingRequired.length) problems.push('the missing sections');
-    if (!model.entities.hasEmail || !model.entities.hasPhone) problems.push('the contact details');
-    if (model.text.invisibleTextRuns + model.text.backgroundColourTextRuns) problems.push('the hidden text');
-    if (!problems.length) {
-      return 'Everything a parser needs came through cleanly. Scoring will tell you how the '
-        + 'content reads; the structure is already out of the way.';
-    }
-    return 'Worth fixing first: ' + problems.join(', ') + '. These are structural, so they cost '
-      + 'points with every system that reads this file, whatever the wording says.';
-  }
-
-  var currentScanId = null;
-
-  function renderReading(scan) {
-    currentScanId = scan.id;
-    document.getElementById('read-file').textContent =
-      scan.filename + ' — ' + bytes(scan.file_bytes);
+  function renderFacts(model) {
     var list = document.getElementById('read-facts');
     list.textContent = '';
-    readingRows(scan.model).forEach(function (row) {
+    readingRows(model).forEach(function (row) {
       var wrap = document.createElement('div');
       // Keyed so a test can select one row exactly. Two rows mentioning
       // "columns" made a substring selector match both.
@@ -463,11 +613,42 @@
       wrap.appendChild(value);
       list.appendChild(wrap);
     });
-    document.getElementById('read-verdict').textContent = verdictFor(scan.model);
+  }
+
+  /**
+   * Paint the whole results screen from one scan.
+   *
+   * `machine` and the identity block only exist on a scan the browser just
+   * uploaded — neither is stored — so re-opening a scan from history shows the
+   * score and the findings without them, and says so rather than rendering an
+   * empty panel.
+   */
+  function renderResult(scan) {
+    currentScanId = scan.id;
+    var result = scan.result;
+    if (!result) {
+      setError('result-error', 'This scan could not be read.');
+      return;
+    }
+    renderScore(result, scan);
+    renderPillars(result);
+    renderFixes(result);
+    renderEngines(result);
+    renderFacts(scan.model);
+
+    var machineFold = document.getElementById('machine-view').closest('.fold');
+    if (scan.machineView) {
+      renderMachineView(scan.machineView);
+      machineFold.hidden = false;
+    } else {
+      machineFold.hidden = true;
+    }
+
     var link = document.getElementById('read-download');
     link.href = '/api/scans/' + scan.id + '/file';
     link.hidden = !scan.file_available;
-    document.getElementById('card-read').hidden = false;
+    setError('result-error', '');
+    show('result', true);
   }
 
   async function loadHistory() {
@@ -479,12 +660,22 @@
     list.textContent = '';
     scans.forEach(function (scan) {
       var item = document.createElement('li');
-      var when = new Date(scan.created_at * 1000).toLocaleString();
-      var what = scan.status === 'complete'
-        ? scan.page_count + (scan.page_count === 1 ? ' page' : ' pages')
-        : 'could not be read';
-      item.textContent = scan.filename + ' — ' + what + ' — ' + when
-        + (scan.file_available ? '' : ' — file deleted');
+      var when = new Date(scan.created_at * 1000).toLocaleDateString(undefined, {
+        day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+      });
+      if (scan.status !== 'complete') {
+        item.textContent = scan.filename + ' — could not be read — ' + when;
+        list.appendChild(item);
+        return;
+      }
+      // A past scan is worth re-opening: the score and the fix list outlive
+      // the file by 29 days, and comparing a re-scan is the point of history.
+      var open = document.createElement('button');
+      open.type = 'button';
+      open.className = 'linkbtn';
+      open.textContent = scan.filename + ' — ' + scan.score + '/100 — ' + when;
+      open.addEventListener('click', function () { openScan(scan.id); });
+      item.appendChild(open);
       list.appendChild(item);
     });
     card.hidden = scans.length === 0;
@@ -529,13 +720,38 @@
           || UPLOAD_MESSAGES[data && data.error]
           || 'That CV could not be scanned. Try again.';
         setError('upload-error', message);
-        document.getElementById('card-read').hidden = true;
+        currentScanId = null;
         loadHistory();
         return;
       }
-      renderReading(data.scan);
+      renderResult(data.scan);
       loadHistory();
-      document.getElementById('card-read').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }
+
+  async function openScan(id) {
+    var result = await api('/api/scans/' + id, { method: 'GET' });
+    if (!result.ok || !result.data || !result.data.scan) {
+      setError('upload-error', say(result.data && result.data.error));
+      return;
+    }
+    renderResult(result.data.scan);
+  }
+
+  var backBtn = document.getElementById('result-back');
+  if (backBtn) backBtn.addEventListener('click', function () { show('account', true); });
+
+  var againBtn = document.getElementById('scan-another');
+  if (againBtn) {
+    againBtn.addEventListener('click', function () {
+      // A fresh upload needs a fresh bot-check token, and the file input still
+      // holds the last file.
+      fileInput.value = '';
+      var chosen = document.getElementById('drop-file');
+      chosen.textContent = '';
+      chosen.hidden = true;
+      show('account', true);
+      renderShield(uploadShield);
     });
   }
 
@@ -551,12 +767,12 @@
       var result = await api('/api/scans/' + currentScanId, { method: 'DELETE' });
       idle(deleteScanBtn);
       if (!result.ok) {
-        setError('upload-error', say(result.data && result.data.error));
+        setError('result-error', say(result.data && result.data.error));
         return;
       }
       currentScanId = null;
-      document.getElementById('card-read').hidden = true;
       loadHistory();
+      show('account', true);
     });
   }
 

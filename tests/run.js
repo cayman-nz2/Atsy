@@ -20,6 +20,9 @@ import {
   fileRetentionSeconds, recordRetentionSeconds, MAX_UPLOAD_BYTES,
 } from '../src/scan.js';
 import { runRetention, purgeFiles, purgeRecords, purgeEphemera } from '../src/retention.js';
+import { runChecks, ALL_CHECKS, PILLARS } from '../src/scoring/index.js';
+import { buildContext } from '../src/scoring/context.js';
+import { buildMatcher } from '../src/skills.js';
 import { RELEASES } from '../src/report.js';
 import {
   json, err, escapeHtml, nowSec, SECURITY_HEADERS,
@@ -376,12 +379,24 @@ const schemaTables = () => {
   return [...schema.matchAll(/CREATE TABLE (\w+)/g)].map((match) => match[1]);
 };
 
-await test('every table in the schema is named somewhere in the delete cascade', () => {
+// A table holds user data when a row can be traced to a person. `skills` is a
+// shared reference table — deleting an account must not empty the taxonomy —
+// so the distinction is derived from the columns rather than kept as a list
+// somebody has to remember to update.
+const OWNERSHIP_COLUMNS = ['user_id', 'scan_id', 'email'];
+const userDataTables = (env) => schemaTables().filter((table) => {
+  const columns = env.DB.prepare(`PRAGMA table_info(${table})`).all().results
+    .map((column) => column.name);
+  return OWNERSHIP_COLUMNS.some((needle) => columns.includes(needle));
+});
+
+await test('every table holding user data is named somewhere in the delete cascade', () => {
   // A structural guard, so a table added by a future migration that nobody
   // wired into the cascade fails here even if no test fixture happens to put
   // a row in it. The cascade spans auth.js and the scan half it delegates to.
+  const env = testEnv();
   const cascade = `${read('src/auth.js')}\n${read('src/scan.js')}`;
-  for (const table of schemaTables()) {
+  for (const table of userDataTables(env)) {
     assert.ok(cascade.includes(`FROM ${table}`),
       `nothing in the delete cascade removes rows from ${table}`);
   }
@@ -402,18 +417,23 @@ await test('deleting an account really empties every table, not just the ones we
     .bind('token-hash', user.id, nowSec(), nowSec() + 600, nowSec()).run();
   await getScanFile(new Request('https://atsy.test/'), env, user, scan.id);
 
-  for (const table of schemaTables()) {
+  const tables = userDataTables(env);
+  for (const table of tables) {
     const { count } = env.DB.prepare(`SELECT COUNT(*) AS count FROM ${table}`).first();
     assert.ok(count > 0, `the test did not put a row in ${table}, so it proves nothing about it`);
   }
 
   const response = await deleteAccount(new Request('https://atsy.test/'), env, user);
   assert.equal(response.status, 200);
-  for (const table of schemaTables()) {
+  for (const table of tables) {
     const { count } = env.DB.prepare(`SELECT COUNT(*) AS count FROM ${table}`).first();
     assert.equal(count, 0, `${table} still holds rows after the account was deleted`);
   }
   assert.equal(env.CV.objects.size, 0, 'the stored CV outlived the account');
+  // And the shared taxonomy is untouched: one reader leaving must not empty a
+  // reference table for everyone else.
+  assert.ok(env.DB.prepare('SELECT COUNT(*) AS count FROM skills').first().count > 0,
+    'deleting an account emptied the shared skills taxonomy');
 });
 
 await test('the entry module exports only the fetch handler', () => {
@@ -494,14 +514,35 @@ await test('no emoji anywhere in the interface', () => {
   }
 });
 
+// Read one CSS block by matching braces from a starting selector. Slicing to
+// the end of the file instead — which this test used to do — silently swept
+// every later component rule into "the dark block", so a component-local
+// custom property looked like an undefined theme token.
+function cssBlockAt(css, selector) {
+  const start = css.indexOf(selector);
+  if (start < 0) return '';
+  let depth = 0;
+  for (let index = css.indexOf('{', start); index < css.length; index += 1) {
+    if (css[index] === '{') depth += 1;
+    else if (css[index] === '}') {
+      depth -= 1;
+      if (depth === 0) return css.slice(start, index + 1);
+    }
+  }
+  return css.slice(start);
+}
+
 await test('every colour token is defined on bare :root, not only in a theme block', () => {
   const css = read('public/atsy.css');
-  const rootBlock = css.slice(css.indexOf(':root {'), css.indexOf('@media (prefers-color-scheme: dark)'));
-  const darkBlock = css.slice(css.indexOf(":root[data-theme='dark']"));
+  const rootBlock = cssBlockAt(css, ':root {');
   const tokensIn = (block) => new Set([...block.matchAll(/(--[a-z0-9-]+):/g)].map((m) => m[1]));
   const light = tokensIn(rootBlock);
-  for (const token of tokensIn(darkBlock)) {
-    assert.ok(light.has(token), `${token} is defined for dark but never on bare :root`);
+
+  // Both places dark is defined: the explicit toggle and the system default.
+  for (const selector of [":root[data-theme='dark']", '@media (prefers-color-scheme: dark)']) {
+    for (const token of tokensIn(cssBlockAt(css, selector))) {
+      assert.ok(light.has(token), `${token} is defined for dark (${selector}) but never on bare :root`);
+    }
   }
 });
 
@@ -819,7 +860,8 @@ const scanOf = async (env, user, name, options) =>
 await test('the whole corpus parses to a document model under plain node', async () => {
   // M2's acceptance criterion. No Cloudflare runtime, no network: if this
   // passes, every scoring check in M3 can be developed against real documents.
-  assert.equal(fixtureNames.length, 20, 'the corpus is 20 CVs');
+  assert.ok(fixtureNames.length >= 20,
+    `the corpus must hold at least 20 CVs, found ${fixtureNames.length}`);
   for (const name of fixtureNames) {
     if (name === 'imageOnly') continue; // no text layer, asserted separately
     const model = await buildModel(fixture(name));
@@ -914,14 +956,28 @@ await test('the model reaches the reader but only the summary reaches the databa
   assert.equal(reopened.scan.model.entities.hasEmail, true);
 });
 
-await test('a scan is unscored until the scoring engine lands, and says so', async () => {
-  // Better an honest gap than a fabricated number: the product rule is that
-  // Atsy never shows a figure it did not compute.
+await test('a scan carries a score, a band, pillars and engine risk', async () => {
   const env = testEnv();
   const user = testUser(env);
   const body = await scanOf(env, user, 'clean');
-  assert.equal(body.scan.scored, false);
-  assert.equal(body.scan.score, null);
+  assert.equal(body.scan.scored, true);
+  assert.ok(body.scan.score >= 0 && body.scan.score <= 100, `score was ${body.scan.score}`);
+  assert.ok(['excellent', 'strong', 'work', 'risk'].includes(body.scan.band));
+  assert.equal(body.scan.result.pillars.length, 5);
+  assert.equal(body.scan.result.engines.length, 6);
+  assert.ok(body.scan.result.engineDisclaimer.includes('not a score from the engine itself'));
+
+  // The score is on the row, not only in the response.
+  const row = env.DB.prepare('SELECT score, band, pillars_json FROM scans WHERE id = ?')
+    .bind(body.scan.id).first();
+  assert.equal(row.score, body.scan.score);
+  assert.equal(row.band, body.scan.band);
+  assert.equal(JSON.parse(row.pillars_json).length, 5);
+
+  // And every triggered check is recorded for the admin aggregates.
+  const checks = env.DB.prepare('SELECT check_id FROM scan_checks WHERE scan_id = ?')
+    .bind(body.scan.id).all().results.map((r) => r.check_id);
+  assert.deepEqual([...checks].sort(), [...body.scan.result.findings.map((f) => f.id)].sort());
 });
 
 await test('a picture of a CV is refused with an explanation, not scored zero', async () => {
@@ -1284,6 +1340,279 @@ await test('the new fixtures each show the defect they were built for', async ()
 
   const bars = await summaryOf('skillBars');
   assert.ok(bars.sections.found.includes('skills'));
+});
+
+/* ---------------- scoring ---------------- */
+
+// The golden corpus. Every score here was read off the engine and committed on
+// purpose: docs/SCORING-SPEC.md §7 requires that a scoring change states its
+// delta on every fixture, and a table nobody has to recompute is what makes
+// that possible in a code review.
+const GOLDEN = {
+  clean:               { score:  99, band: 'excellent',  checks: 'E04' },
+  twoColumn:           { score:  70, band: 'work',       checks: 'B02 B03 B04 B05 C01 C08 D01 D11 E01 P02 P11' },
+  headerContact:       { score:  94, band: 'excellent',  checks: 'B04 D10 E04 P04' },
+  imageOnly:           { score:  25, band: 'risk',       checks: 'B01 B02 B03 B04 B05 B07 C01 C08 D01 E01 P01 P11' },
+  hiddenText:          { score:  40, band: 'risk',       checks: 'D09 E04 P14' },
+  withPhoto:           { score:  99, band: 'excellent',  checks: 'B07 E04' },
+  fourPage:            { score:  93, band: 'excellent',  checks: 'C03 D07 E04 P12' },
+  oddHeadings:         { score:  84, band: 'strong',     checks: 'C01 D01 D11 E01 P11' },
+  dateChaos:           { score:  95, band: 'excellent',  checks: 'C02 E04' },
+  noMetrics:           { score:  85, band: 'strong',     checks: 'D02 D03 D04 D06 E04' },
+  twoColumnFrames:     { score:  67, band: 'work',       checks: 'B02 B03 B04 B05 C01 C08 D01 D11 E01 P02 P03 P11' },
+  tableLayout:         { score:  72, band: 'work',       checks: 'B02 B03 B04 B05 C01 C04 C08 D01 E01 P05 P11' },
+  noContact:           { score:  93, band: 'excellent',  checks: 'B02 B03 B04 B05 E04' },
+  footerContact:       { score:  93, band: 'excellent',  checks: 'B04 B05 B06 E04 P04' },
+  runningHeadFoot:     { score:  88, band: 'strong',     checks: 'D02 D04 D10 E04 P04' },
+  noSections:          { score:  83, band: 'strong',     checks: 'C01 C08 D01 E01 P11' },
+  oldestFirst:         { score:  96, band: 'excellent',  checks: 'C03 E04' },
+  careerGap:           { score:  97, band: 'excellent',  checks: 'C04 E04' },
+  tinyType:            { score:  97, band: 'excellent',  checks: 'E04 P16' },
+  noLanguage:          { score:  98, band: 'excellent',  checks: 'E04 P17' },
+  wallOfText:          { score:  94, band: 'excellent',  checks: 'D04 D06 E04' },
+  skillBars:           { score:  96, band: 'excellent',  checks: 'E03 P10' },
+  noName:              { score:  97, band: 'excellent',  checks: 'B01 E04' },
+  personalDetails:     { score:  99, band: 'excellent',  checks: 'B08 E04' },
+  noPresentMarker:     { score:  98, band: 'excellent',  checks: 'C05 E04' },
+  impossibleDates:     { score:  96, band: 'excellent',  checks: 'C04 C06 E04' },
+  weakTitle:           { score:  95, band: 'excellent',  checks: 'C07 D06 E04' },
+  mixedTense:          { score:  98, band: 'excellent',  checks: 'D08 E04' },
+  pronouns:            { score:  93, band: 'excellent',  checks: 'D02 D05 E04' },
+  skillsGrid:          { score:  93, band: 'excellent',  checks: 'E02 E04 E05 P05' },
+  exoticFont:          { score:  97, band: 'excellent',  checks: 'E04 P06' },
+  annotationOnlyLink:  { score:  97, band: 'excellent',  checks: 'B05 E04 P15' },
+};
+
+const scoreOf = async (name, options = {}) =>
+  runChecks(await buildModel(fixture(name)), {
+    filename: `${name}.pdf`, fileBytes: fixture(name).length, ...options,
+  });
+
+await test('every fixture scores exactly its golden value', async () => {
+  for (const [name, expected] of Object.entries(GOLDEN)) {
+    const result = await scoreOf(name);
+    assert.equal(result.score, expected.score, `${name} scored ${result.score}, golden is ${expected.score}`);
+    assert.equal(result.band, expected.band, `${name} banded ${result.band}, golden is ${expected.band}`);
+    assert.equal(result.checkIds.slice().sort().join(' '), expected.checks,
+      `${name} triggered a different set of checks`);
+  }
+});
+
+await test('the golden table covers the whole corpus', () => {
+  assert.deepEqual(Object.keys(GOLDEN).sort(), fixtureNames.slice().sort(),
+    'a fixture without a golden score is a fixture nobody is watching');
+});
+
+await test('scoring the same CV twice is byte-identical', async () => {
+  // The product promise: no model in the scoring path, so no drift. Without
+  // this a re-scan could not be compared to the scan before it.
+  for (const name of ['clean', 'twoColumn', 'hiddenText']) {
+    const first = JSON.stringify(await scoreOf(name));
+    const second = JSON.stringify(await scoreOf(name));
+    assert.equal(first, second, `${name} did not score identically twice`);
+  }
+});
+
+await test('every check in the catalogue is published on /about, with the same points', () => {
+  // The rubric is a promise: anyone can read it and predict their result. An
+  // engine that scores by rules the page does not list would break that.
+  const page = read('public/about.html');
+  const published = new Map([...page.matchAll(/<dt>([A-Z]\d{2})\s*<span>([^<]+)<\/span><\/dt>/g)]
+    .map((match) => [match[1], match[2].trim()]));
+
+  assert.equal(published.size, ALL_CHECKS.length,
+    `the page publishes ${published.size} checks, the engine runs ${ALL_CHECKS.length}`);
+  for (const check of ALL_CHECKS) {
+    assert.ok(published.has(check.id), `${check.id} is not published on /about`);
+    const shown = published.get(check.id);
+    const expected = check.fatal ? `caps your score at ${check.cap}` : String(check.points);
+    assert.equal(shown, expected,
+      `${check.id} is worth ${expected} in the engine but /about says "${shown}"`);
+  }
+});
+
+await test('pillar weights add to 100 and each pillar keeps its own points', async () => {
+  assert.equal(PILLARS.reduce((sum, pillar) => sum + pillar.weight, 0), 100);
+  const result = await scoreOf('twoColumn');
+  for (const pillar of result.pillars) {
+    assert.ok(pillar.score >= 0, `${pillar.id} went negative`);
+    assert.ok(pillar.score <= pillar.weight, `${pillar.id} scored above its weight`);
+  }
+  // Deductions never cascade: a wrecked Pillar A leaves Pillar D intact.
+  const contentPillar = result.pillars.find((pillar) => pillar.id === 'D');
+  assert.ok(contentPillar.score > 15, 'a parse failure ate the content pillar');
+});
+
+await test('a fatal check caps the score and says so', async () => {
+  const hidden = await scoreOf('hiddenText');
+  assert.equal(hidden.score, 40, 'P14 must cap at 40');
+  assert.equal(hidden.capped, true);
+  assert.ok(hidden.rawScore > hidden.score, 'the cap did not actually bite');
+  assert.deepEqual(hidden.caps.map((cap) => cap.id), ['P14']);
+
+  const image = await scoreOf('imageOnly');
+  assert.equal(image.score, 25, 'P01 must cap at 25');
+  assert.ok(image.caps.some((cap) => cap.id === 'P01'));
+});
+
+await test('every finding carries a message, a fix and bounded evidence', async () => {
+  for (const name of fixtureNames) {
+    const result = await scoreOf(name);
+    for (const finding of result.findings) {
+      assert.ok(finding.message && finding.message.length > 30,
+        `${name}/${finding.id} has no usable message`);
+      assert.ok(['critical', 'major', 'minor'].includes(finding.severity));
+      assert.ok(finding.title && finding.title.length > 3, `${finding.id} has no title`);
+      for (const item of finding.evidence) {
+        assert.ok(item.text.length <= 120,
+          `${name}/${finding.id} evidence is ${item.text.length} characters, over the 120 cap`);
+        assert.ok(item.page >= 1);
+      }
+    }
+  }
+});
+
+await test('findings are ordered worst first', async () => {
+  const result = await scoreOf('twoColumn');
+  const rank = { critical: 0, major: 1, minor: 2 };
+  for (let index = 1; index < result.findings.length; index += 1) {
+    const previous = result.findings[index - 1];
+    const current = result.findings[index];
+    assert.ok(rank[previous.severity] <= rank[current.severity],
+      'a minor finding was listed above a critical one');
+  }
+});
+
+/* ---------------- checks that no fixture can express ---------------- */
+
+// Four checks cannot be driven from a generated PDF: three need a font that
+// maps characters the standard 14 do not carry (icon bullets, emoji, broken
+// encodings), and one is a property of the upload rather than the document.
+// They get direct tests against a synthetic context instead — the alternative
+// is shipping a check with no evidence it fires.
+
+const contextFor = async (name, options = {}) =>
+  buildContext(await buildModel(fixture(name)), options);
+
+const checkById = (id) => ALL_CHECKS.find((check) => check.id === id);
+
+await test('P07 fires on corrupted encodings and not on clean text', async () => {
+  const ctx = await contextFor('clean');
+  assert.equal(checkById('P07').run(ctx), null);
+  for (const broken of ['Managed (cid:214)(cid:88) teams', 'Oﬃce administration and ﬁnance']) {
+    const hit = checkById('P07').run({ ...ctx, allText: `${ctx.allText}\n${broken}` });
+    assert.ok(hit, `P07 missed: ${broken}`);
+    assert.match(hit.message, /corrupted/);
+  }
+});
+
+await test('P08 fires on icon-font bullets and not on plain ones', async () => {
+  const ctx = await contextFor('clean');
+  assert.equal(checkById('P08').run(ctx), null);
+  const withIcons = {
+    ...ctx,
+    bodyLines: [{ page: 1, text: '\uF0B7 Led the migration of 14 depots' }],
+  };
+  assert.ok(checkById('P08').run(withIcons), 'a private-use bullet glyph was not caught');
+});
+
+await test('P09 fires on emoji and not on ordinary punctuation', async () => {
+  const ctx = await contextFor('clean');
+  assert.equal(checkById('P09').run(ctx), null);
+  // Digits and # are matched by \p{Emoji}, which is why the check uses
+  // explicit ranges: a phone number must never read as an emoji.
+  assert.equal(checkById('P09').run({ ...ctx, allText: 'Call +64 21 555 0134 #ops' }), null);
+  const hit = checkById('P09').run({ ...ctx, allText: 'Led the team \u{1F680} to target' });
+  assert.ok(hit, 'an emoji was not caught');
+});
+
+await test('P13 judges the filename, which is not part of the document', async () => {
+  const ctx = await contextFor('clean');
+  assert.equal(checkById('P13').run({ ...ctx, filename: 'priya-raman-operations.pdf' }), null);
+  for (const bad of ['cv final v3.pdf', 'my cv.pdf', 'resume.pdf', 'Priya CV #2.pdf', 'CV_ünïcode.pdf']) {
+    assert.ok(checkById('P13').run({ ...ctx, filename: bad }), `P13 accepted ${bad}`);
+  }
+});
+
+await test('every check has a fixture that fires it, or a direct test that does', async () => {
+  const fired = new Set();
+  for (const name of fixtureNames) {
+    (await scoreOf(name)).checkIds.forEach((id) => fired.add(id));
+  }
+  // The four above are covered by the direct tests immediately preceding this
+  // one; everything else must be provable from a real document.
+  const DIRECTLY_TESTED = ['P07', 'P08', 'P09', 'P13'];
+  const missing = ALL_CHECKS.map((check) => check.id)
+    .filter((id) => !fired.has(id) && !DIRECTLY_TESTED.includes(id));
+  assert.deepEqual(missing, [], `no fixture fires: ${missing.join(', ')}`);
+  // And the control must stay quiet on nearly all of them.
+  const clean = await scoreOf('clean');
+  assert.ok(clean.score >= 95, `the control scored ${clean.score}`);
+});
+
+/* ---------------- engine simulation ---------------- */
+
+await test('engine risk rises with the defects that engine is sensitive to', async () => {
+  const clean = await scoreOf('clean');
+  const columns = await scoreOf('twoColumn');
+  const taleoClean = clean.engines.find((engine) => engine.id === 'taleo');
+  const taleoColumns = columns.engines.find((engine) => engine.id === 'taleo');
+  assert.ok(taleoColumns.risk > taleoClean.risk, 'columns did not raise Taleo risk');
+
+  // Taleo is documented as the least forgiving, Ashby the most. The ordering
+  // is the claim being made, so it is the thing to assert.
+  const ashbyColumns = columns.engines.find((engine) => engine.id === 'ashby');
+  assert.ok(taleoColumns.risk > ashbyColumns.risk, 'Taleo should be riskier than Ashby here');
+});
+
+await test('every engine card carries reasons, a band, and the disclaimer', async () => {
+  const result = await scoreOf('twoColumn');
+  assert.equal(result.engines.length, 6);
+  for (const engine of result.engines) {
+    assert.ok(engine.risk >= 0 && engine.risk <= 100, `${engine.id} risk out of range`);
+    assert.ok(['low', 'medium', 'high'].includes(engine.band));
+    assert.ok(engine.reasons.length >= 1, `${engine.id} gave no reason`);
+    assert.ok(engine.reasons.every((reason) => !/^[A-Z]\d{2}$/.test(reason)),
+      'an engine card showed a check id instead of a reason in words');
+  }
+  assert.match(result.engineDisclaimer, /not a score from the engine itself/);
+});
+
+await test('an image-only CV is maximum risk everywhere', async () => {
+  const result = await scoreOf('imageOnly');
+  for (const engine of result.engines) {
+    assert.equal(engine.band, 'high', `${engine.id} was not high risk for a scan`);
+  }
+});
+
+/* ---------------- skills taxonomy ---------------- */
+
+await test('the taxonomy matches aliases, qualifiers and casing', () => {
+  const env = testEnv();
+  const rows = env.DB.prepare('SELECT canonical, alias, family, kind FROM skills').all().results;
+  const taxonomy = buildMatcher(new Map(rows.map((row) =>
+    [row.alias, { canonical: row.canonical, family: row.family, kind: row.kind }])));
+
+  assert.ok(taxonomy.size > 300, `the taxonomy holds only ${taxonomy.size} aliases`);
+  assert.equal(taxonomy.match('postgres').canonical, 'PostgreSQL');
+  assert.equal(taxonomy.match('K8s').canonical, 'Kubernetes');
+  assert.equal(taxonomy.match('  Power BI ').canonical, 'Power BI');
+  assert.equal(taxonomy.match('Advanced SQL').canonical, 'SQL');
+  assert.equal(taxonomy.match('Communication').kind, 'soft');
+  assert.equal(taxonomy.match('Python').kind, 'hard');
+  assert.equal(taxonomy.match('definitely not a skill'), null);
+
+  // Scanning free text is how a job description is read.
+  const found = taxonomy.scan('We need strong Python, some Kubernetes, and Power BI.');
+  const names = found.map((skill) => skill.canonical);
+  assert.ok(names.includes('Python') && names.includes('Kubernetes') && names.includes('Power BI'));
+});
+
+await test('the skill checks stand down when the taxonomy is unavailable', async () => {
+  // A CV reported as having no recognised skills because a lookup table failed
+  // to load would be a lie caused by an outage.
+  const without = await scoreOf('clean', { taxonomy: null });
+  assert.ok(!without.checkIds.includes('E03'), 'E03 fired without a taxonomy to judge against');
 });
 
 /* ---------------- report ---------------- */

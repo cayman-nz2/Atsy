@@ -197,6 +197,47 @@ export function detectTable(lines) {
 }
 
 /** Everything layout knows about a document, per page and overall. */
+/**
+ * The measurements P16 asks about: how tight is the type, and how close to the
+ * paper edge does it run.
+ *
+ * Line height is the MEDIAN gap between consecutive baselines, not the mean: a
+ * CV's blank lines between sections are large gaps that would drag a mean
+ * upwards and hide genuinely cramped body text.
+ */
+export function pageMetrics(page, lines) {
+  const body = lines.filter((line) => line.text.trim());
+  if (!body.length) {
+    return { leftMargin: null, rightMargin: null, lineHeight: null, lineHeightRatio: null };
+  }
+
+  // Grouped lines carry `left`/`right`, not `x`/`width`: reading the item
+  // field names off a line gives NaN, silently, for every page.
+  const left = Math.min(...body.map((line) => line.left));
+  const right = Math.max(...body.map((line) => line.right));
+
+  const gaps = [];
+  for (let index = 1; index < body.length; index += 1) {
+    const gap = body[index].top - body[index - 1].top;
+    // Only gaps that are plausibly one line apart: a section break is not a
+    // line height, and a negative gap is a column jump.
+    if (gap > 0 && gap < 40) gaps.push(gap);
+  }
+  gaps.sort((a, b) => a - b);
+  const lineHeight = gaps.length ? gaps[Math.floor(gaps.length / 2)] : null;
+
+  const sizes = body.map((line) => line.size).filter((size) => size > 0).sort((a, b) => a - b);
+  const typicalSize = sizes.length ? sizes[Math.floor(sizes.length / 2)] : null;
+
+  return {
+    leftMargin: left,
+    rightMargin: page.width - right,
+    lineHeight,
+    // Ratio of line height to type size, the number a designer would quote.
+    lineHeightRatio: lineHeight && typicalSize ? lineHeight / typicalSize : null,
+  };
+}
+
 export function analyseLayout(document) {
   const pages = document.pages.map((page) => {
     const lines = groupLines(page);
@@ -224,6 +265,7 @@ export function analyseLayout(document) {
       columns,
       readingOrder: readingOrderConfidence(page),
       table,
+      metrics: pageMetrics(page, lines),
     };
   });
 
@@ -241,5 +283,13 @@ export function analyseLayout(document) {
     headerItems: pages.reduce((sum, page) => sum + page.header.length, 0),
     footerItems: pages.reduce((sum, page) => sum + page.footer.length, 0),
     repeatedHeader,
+    // The tightest page decides: one cramped page is a cramped CV.
+    tightestMargin: Math.min(...pages.map((page) => {
+      const { leftMargin, rightMargin } = page.metrics;
+      const values = [leftMargin, rightMargin].filter((value) => value !== null);
+      return values.length ? Math.min(...values) : Infinity;
+    })),
+    worstLineHeightRatio: Math.min(...pages.map((page) =>
+      (page.metrics.lineHeightRatio === null ? Infinity : page.metrics.lineHeightRatio))),
   };
 }

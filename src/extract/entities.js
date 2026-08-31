@@ -158,19 +158,66 @@ export function findRoles(sections) {
   return roles;
 }
 
+// A line that continues the bullet above it rather than starting a new one.
+//
+// This matters more than it looks. A real CV bullet wraps across two or three
+// visual lines, and treating each line as its own bullet corrupts every
+// percentage in Pillar D at once: a wrapped bullet whose number happens to sit
+// on the second line reads as one bullet with a number and one without, and a
+// long bullet can never exceed the word limit because it was never whole.
+function continuesPrevious(line, previous) {
+  if (!previous) return false;
+  const text = line.text.trim();
+  if (!text) return false;
+  // An explicit bullet glyph always starts something new.
+  if (/^[•·▪◦‣∙*+\u2013\u2014>»]/.test(text)) return false;
+  // So does a capital letter or a digit, which is how a new claim opens.
+  if (!/^[a-z(]/.test(text)) return false;
+  // A continuation sits at the same indent as the text it continues, or
+  // slightly inside it. A big outdent is a new block.
+  if (Math.abs(line.left - previous.left) > 24) return false;
+  // Consecutive on the page, not across a section or a page break.
+  if (line.page !== previous.page) return false;
+  return true;
+}
+
 /**
  * Bullet-like lines inside the experience section: what the person says they
  * did. Role headings and date lines are structure, not claims, and scoring
  * them as bullets would punish a CV for having a job title.
+ *
+ * Wrapped lines are rejoined first, so a "bullet" here is one claim rather
+ * than one row of glyphs.
  */
 export function findBullets(sections, roles = []) {
   const headings = new Set(roles.map((role) => role.heading).filter(Boolean));
-  return sections.sections
+  const lines = sections.sections
     .filter((section) => section.canonical === 'experience')
     .flatMap((section) => section.lines)
-    .map((line) => line.text.trim())
-    .filter((text) => text.length >= 20 && !findDateRanges(text).length)
-    .filter((text) => !headings.has(text))
+    .filter((line) => line.text.trim());
+
+  const merged = [];
+  let previous = null;
+  for (const line of lines) {
+    const isStructure = !!findDateRanges(line.text).length || headings.has(line.text.trim());
+    if (isStructure) {
+      merged.push({ ...line, text: line.text.trim(), structure: true });
+      previous = null;
+      continue;
+    }
+    if (previous && continuesPrevious(line, previous)) {
+      previous.text = `${previous.text} ${line.text.trim()}`.replace(/\s+/g, ' ');
+      continue;
+    }
+    const entry = { ...line, text: line.text.trim(), structure: false };
+    merged.push(entry);
+    previous = entry;
+  }
+
+  return merged
+    .filter((entry) => !entry.structure)
+    .map((entry) => entry.text)
+    .filter((text) => text.length >= 20)
     .filter((text) => text.split(/\s+/).length >= 4);
 }
 

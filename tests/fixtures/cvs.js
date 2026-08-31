@@ -8,6 +8,9 @@
 import { writePdf, column } from './pdf-writer.js';
 
 const A4 = { width: 595, height: 842 };
+// Word and Google Docs both write /Lang. A corpus where no fixture declares a
+// language makes P17 fire on every CV, which tells the reader nothing.
+const DOC_INFO = { lang: 'en-NZ' };
 const CLEAN_LINES = [
   'Priya Raman',
   'Operations Manager',
@@ -39,6 +42,7 @@ const CLEAN_LINES = [
 export const FIXTURES = {
   // The control: everything a parser wants.
   clean: () => writePdf({
+    info: DOC_INFO,
     pages: [{ ...A4, runs: column({ x: 57, top: 60, lines: CLEAN_LINES, pageHeight: A4.height }) }],
   }),
 
@@ -61,7 +65,7 @@ export const FIXTURES = {
       if (left[row]) runs.push({ text: left[row], x: 57, y, size: 10 });
       if (right[row]) runs.push({ text: right[row], x: 250, y, size: 10 });
     }
-    return writePdf({ pages: [{ ...A4, runs }] });
+    return writePdf({ info: DOC_INFO, pages: [{ ...A4, runs }] });
   },
 
   // Contact details in the top band, repeated on both pages: the region most
@@ -72,6 +76,7 @@ export const FIXTURES = {
       x: 57, y: A4.height - 24, size: 9,
     });
     return writePdf({
+      info: DOC_INFO,
       pages: [
         { ...A4, runs: [bandRun(1), ...column({ x: 57, top: 90, lines: CLEAN_LINES.slice(0, 20).filter((l) => !l.includes('@')), pageHeight: A4.height })] },
         { ...A4, runs: [bandRun(2), ...column({ x: 57, top: 90, lines: CLEAN_LINES.slice(20), pageHeight: A4.height })] },
@@ -81,12 +86,14 @@ export const FIXTURES = {
 
   // A scan: pixels, no text layer at all.
   imageOnly: () => writePdf({
+    info: DOC_INFO,
     pages: [{ ...A4, runs: [], images: [{ x: 40, y: 40, w: 515, h: 760 }] }],
   }),
 
   // Keyword stuffing: a block drawn in invisible render mode, plus a line in
   // white on the white page.
   hiddenText: () => writePdf({
+    info: DOC_INFO,
     pages: [{
       ...A4,
       runs: [
@@ -99,6 +106,7 @@ export const FIXTURES = {
 
   // A photo in the top third of the first page.
   withPhoto: () => writePdf({
+    info: DOC_INFO,
     pages: [{
       ...A4,
       runs: column({ x: 57, top: 60, lines: CLEAN_LINES, pageHeight: A4.height }),
@@ -108,6 +116,7 @@ export const FIXTURES = {
 
   // Four pages of the same content: longer than anyone reads.
   fourPage: () => writePdf({
+    info: DOC_INFO,
     pages: [1, 2, 3, 4].map(() => ({
       ...A4, runs: column({ x: 57, top: 60, lines: CLEAN_LINES, pageHeight: A4.height }),
     })),
@@ -115,6 +124,7 @@ export const FIXTURES = {
 
   // Headings a parser's section model does not recognise.
   oddHeadings: () => writePdf({
+    info: DOC_INFO,
     pages: [{
       ...A4,
       runs: column({
@@ -131,6 +141,7 @@ export const FIXTURES = {
 
   // Two date families in one document.
   dateChaos: () => writePdf({
+    info: DOC_INFO,
     pages: [{
       ...A4,
       runs: column({
@@ -146,6 +157,7 @@ export const FIXTURES = {
 
   // Every bullet is a duty, not a result.
   noMetrics: () => writePdf({
+    info: DOC_INFO,
     pages: [{
       ...A4,
       runs: column({
@@ -179,7 +191,7 @@ export const FIXTURES = {
         'Team Lead, Southbound Freight', 'Jun 2019 - Feb 2023', 'Managed rosters for 24 staff',
         'Managed supplier relationships'],
     }));
-    return writePdf({ pages: [{ ...A4, runs }] });
+    return writePdf({ info: DOC_INFO, pages: [{ ...A4, runs }] });
   },
 
   // A table: three or more rows whose cells share x positions.
@@ -197,13 +209,14 @@ export const FIXTURES = {
         runs.push({ text: cell, x: 57 + cellIndex * 170, y, size: 10 });
       });
     });
-    return writePdf({ pages: [{ ...A4, runs }] });
+    return writePdf({ info: DOC_INFO, pages: [{ ...A4, runs }] });
   },
 
   // No way to reach the candidate. Every other CV in the corpus has contact
   // details somewhere; this one has a name and nothing else, which is a
   // rejection at the first screen no matter how good the rest is.
   noContact: () => writePdf({
+    info: DOC_INFO,
     pages: [{
       ...A4,
       runs: column({
@@ -216,6 +229,7 @@ export const FIXTURES = {
   // Contact details in the bottom band. Visually fine, and in the region a
   // parser is most likely to treat as a running foot and discard.
   footerContact: () => writePdf({
+    info: DOC_INFO,
     pages: [{
       ...A4,
       runs: [
@@ -233,6 +247,7 @@ export const FIXTURES = {
   runningHeadFoot: () => {
     const chunk = (start) => CLEAN_LINES.slice(start, start + 12);
     return writePdf({
+      info: DOC_INFO,
       pages: [0, 12, 24].map((start) => ({
         ...A4,
         runs: [
@@ -248,6 +263,7 @@ export const FIXTURES = {
   // has nothing to hang a section model on, so nothing is found where it is
   // expected to be.
   noSections: () => writePdf({
+    info: DOC_INFO,
     pages: [{
       ...A4,
       runs: column({
@@ -274,12 +290,13 @@ export const FIXTURES = {
       '',
       ...CLEAN_LINES.slice(CLEAN_LINES.indexOf('EDUCATION')),
     ];
-    return writePdf({ pages: [{ ...A4, runs: column({ x: 57, top: 60, lines, pageHeight: A4.height }) }] });
+    return writePdf({ info: DOC_INFO, pages: [{ ...A4, runs: column({ x: 57, top: 60, lines, pageHeight: A4.height }) }] });
   },
 
   // Nineteen months between the two roles. Not a defect in itself — the point
   // is that Atsy can see it, so it can say so before a recruiter does.
   careerGap: () => writePdf({
+    info: DOC_INFO,
     pages: [{
       ...A4,
       runs: column({
@@ -293,22 +310,213 @@ export const FIXTURES = {
   // Seven-point body text: squeezed onto one page at the cost of being
   // unreadable on a phone, which is where most first screens now happen.
   tinyType: () => writePdf({
+    info: DOC_INFO,
     pages: [{
       ...A4,
       runs: column({ x: 57, top: 60, lines: CLEAN_LINES, size: 7, leading: 10, pageHeight: A4.height }),
     }],
   }),
 
+  // No declared /Lang. Every other fixture declares en-NZ, the way a real
+  // export does, so this is the only one that triggers P17 — and it does so on
+  // the language half alone. The mixed-script half is exercised as a direct
+  // check test: a second script needs a font that can encode it, and the
+  // fixture writer only has the standard 14.
+  noLanguage: () => writePdf({
+    pages: [{
+      ...A4,
+      runs: column({ x: 57, top: 60, lines: CLEAN_LINES, pageHeight: A4.height }),
+    }],
+  }),
+
+  // One bullet that runs to a paragraph, WRAPPED the way a real editor wraps
+  // it: continuation lines start lower-case at the same indent. Written
+  // unwrapped, the line ran off the page and pdf.js discarded the overflow, so
+  // the fixture silently tested nothing (incident 60).
+  wallOfText: () => {
+    const wrapped = [
+      'Was responsible for a broad portfolio of operational duties spanning',
+      'the depot network, including delivery performance oversight and the',
+      'coordination of dispatch teams, as well as weekly reporting to the',
+      'senior leadership group on progress against the agreed targets.',
+    ];
+    const lines = CLEAN_LINES.flatMap((line) =>
+      (line.startsWith('Lifted on-time') ? wrapped : [line]));
+    return writePdf({
+      info: DOC_INFO,
+      pages: [{ ...A4, runs: column({ x: 57, top: 60, lines, pageHeight: A4.height }) }],
+    });
+  },
+
   // Skills as rating bars: five filled rectangles and no text. The reader sees
   // "advanced SQL"; the parser sees an empty skills section.
   skillBars: () => {
     const lines = CLEAN_LINES.slice(0, CLEAN_LINES.indexOf('SKILLS') + 1);
     const runs = column({ x: 57, top: 60, lines, pageHeight: A4.height });
+    // The bars go directly under the SKILLS heading, where a real CV draws
+    // them. Placed at the foot of the page instead they are 350pt away from
+    // the heading and no proximity test could reasonably connect the two.
+    const headingY = A4.height - 60 - (lines.length - 1) * 15;
     const rects = [0, 1, 2, 3, 4].map((row) => ({
-      x: 57, y: 150 - row * 18, w: 60 + row * 30, h: 8, rgb: [0.15, 0.15, 0.15],
+      x: 57, y: headingY - 22 - row * 18, w: 60 + row * 30, h: 8, rgb: [0.15, 0.15, 0.15],
     }));
-    return writePdf({ pages: [{ ...A4, runs, rects }] });
+    return writePdf({ info: DOC_INFO, pages: [{ ...A4, runs, rects }] });
   },
+
+  // --- one fixture per remaining check ------------------------------------
+  // The spec's rule is that no check ships without a fixture that fires it and
+  // one that does not. `clean` is the "does not" for all of these.
+
+  // B01: the CV opens straight into contact details with no name line at all.
+  // Dropping only the name is not enough — the job title on the next line
+  // reads as a name to any heuristic, and to a human skimming.
+  noName: () => writePdf({
+    info: DOC_INFO,
+    pages: [{
+      ...A4,
+      runs: column({
+        x: 57, top: 60, pageHeight: A4.height,
+        lines: ['CURRICULUM VITAE 2026', ...CLEAN_LINES.slice(2)],
+      }),
+    }],
+  }),
+
+  // B08: personal details that invite bias and help nobody.
+  personalDetails: () => writePdf({
+    info: DOC_INFO,
+    pages: [{
+      ...A4,
+      runs: column({
+        x: 57, top: 60, pageHeight: A4.height,
+        lines: [
+          CLEAN_LINES[0],
+          'Date of Birth: 4 May 1988 | Marital status: married | Nationality: NZ',
+          ...CLEAN_LINES.slice(1),
+        ],
+      }),
+    }],
+  }),
+
+  // C05: the newest role has a closed end date, so a parser files the reader
+  // as unemployed. C06 rides along on the reversed pair below instead.
+  noPresentMarker: () => writePdf({
+    info: DOC_INFO,
+    pages: [{
+      ...A4,
+      runs: column({
+        x: 57, top: 60, pageHeight: A4.height,
+        lines: CLEAN_LINES.map((line) =>
+          (line === 'Mar 2023 - Present' ? 'Mar 2023 - Dec 2025' : line)),
+      }),
+    }],
+  }),
+
+  // C06: an end date before its start date.
+  impossibleDates: () => writePdf({
+    info: DOC_INFO,
+    pages: [{
+      ...A4,
+      runs: column({
+        x: 57, top: 60, pageHeight: A4.height,
+        lines: CLEAN_LINES.map((line) =>
+          (line === 'Jun 2019 - Feb 2023' ? 'Feb 2023 - Jun 2019' : line)),
+      }),
+    }],
+  }),
+
+  // C07: a title no search will ever return.
+  weakTitle: () => writePdf({
+    info: DOC_INFO,
+    pages: [{
+      ...A4,
+      runs: column({
+        x: 57, top: 60, pageHeight: A4.height,
+        lines: CLEAN_LINES.map((line) =>
+          (line === 'Operations Manager, Kauri Logistics' ? 'Operations Ninja, Kauri Logistics' : line)),
+      }),
+    }],
+  }),
+
+  // D08: five verb-initial bullets, two of them present tense inside roles
+  // that ended years ago. Tense is only judgeable from bullets that actually
+  // open with a recognised verb, so these deliberately do.
+  mixedTense: () => writePdf({
+    info: DOC_INFO,
+    pages: [{
+      ...A4,
+      runs: column({
+        x: 57, top: 60, pageHeight: A4.height,
+        lines: CLEAN_LINES.map((line) => {
+          if (line.startsWith('Lifted on-time')) return 'Lift on-time delivery from 82% to 96% across 14 depots in 9 months.';
+          if (line.startsWith('Cut dispatch')) return 'Manage the pick-and-pack process, cutting dispatch errors by 41%.';
+          return line;
+        }),
+      }),
+    }],
+  }),
+
+  // D05: first-person pronouns throughout.
+  pronouns: () => writePdf({
+    info: DOC_INFO,
+    pages: [{
+      ...A4,
+      runs: column({
+        x: 57, top: 60, pageHeight: A4.height,
+        lines: CLEAN_LINES.map((line) => {
+          if (line.startsWith('Lifted on-time')) return 'I lift on-time delivery from 82% to 96% across 14 depots.';
+          if (line.startsWith('Cut dispatch')) return 'I manage the pick-and-pack process, cutting errors by 41%.';
+          if (line.startsWith('Led a team')) return 'Lead a team of 24 and reduce staff turnover from 30% to 11%.';
+          if (line.startsWith('Managed rosters')) return 'Managed rosters for 24 staff across 3 sites, saving $180k a year.';
+          return line;
+        }),
+      }),
+    }],
+  }),
+
+  // E02 and E05: skills laid out as a grid, with self-rated levels in the text.
+  skillsGrid: () => {
+    const head = CLEAN_LINES.slice(0, CLEAN_LINES.indexOf('SKILLS') + 1);
+    const runs = column({ x: 57, top: 60, lines: head, pageHeight: A4.height });
+    const gridTop = A4.height - 60 - head.length * 15;
+    const rows = [
+      ['SQL', 'Expert: 9/10', 'Power BI'],
+      ['Lean', 'Advanced', 'ERP migration'],
+      ['Process design', 'Expert', 'Negotiation'],
+      ['Forecasting', 'Intermediate', 'Reporting'],
+    ];
+    rows.forEach((cells, rowIndex) => {
+      const y = gridTop - rowIndex * 20;
+      cells.forEach((cell, cellIndex) => {
+        runs.push({ text: cell, x: 57 + cellIndex * 170, y, size: 10 });
+      });
+    });
+    return writePdf({ info: DOC_INFO, pages: [{ ...A4, runs }] });
+  },
+
+  // P06: a font that is neither embedded nor one of the standard 14.
+  exoticFont: () => writePdf({
+    info: DOC_INFO,
+    font: 'BrandonGrotesque-Medium',
+    pages: [{
+      ...A4,
+      runs: column({ x: 57, top: 60, lines: CLEAN_LINES, pageHeight: A4.height }),
+    }],
+  }),
+
+  // P15: the portfolio URL exists only as a link annotation behind the word
+  // "here", so the text a parser reads contains no URL at all.
+  annotationOnlyLink: () => writePdf({
+    info: DOC_INFO,
+    pages: [{
+      ...A4,
+      runs: column({
+        x: 57, top: 60, pageHeight: A4.height,
+        lines: CLEAN_LINES.map((line) =>
+          (line === 'linkedin.com/in/priyaraman' ? 'Portfolio: available here' : line)),
+      }),
+      links: [{ url: 'https://priyaraman.example.com/portfolio', rect: [120, 770, 200, 784] }],
+    }],
+  }),
 };
 
 const cache = new Map();

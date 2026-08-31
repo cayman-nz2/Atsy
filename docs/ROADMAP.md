@@ -80,7 +80,7 @@ something untrue: the upload panel itself (an API nobody can reach cannot be
 verified in production), and the correction to `/privacy`, which still said
 scanning was not live.
 
-## M3 — Scoring
+## M3 — Scoring — **shipped v0.7.0 (2026-08-31)**
 
 **Ships:** the full check catalogue (P/B/C/D/E), pillar scoring, bands, the
 engine simulation, lexicons, the skills taxonomy in D1, and the findings API.
@@ -89,7 +89,17 @@ engine simulation, lexicons, the skills taxonomy in D1, and the findings API.
 not, the same fixture scores byte-identically twice, and the scores of all 20
 fixtures are committed as golden values.
 
-## M4 — The results experience
+*Status:* all three hold. 45 of the 49 checks are fired by a fixture; the other
+four (P07 corrupt encodings, P08 icon bullets, P09 emoji, P13 the filename)
+cannot be — three need a font the standard-14 fixture writer cannot supply, and
+one is a property of the upload rather than the document — so each has a direct
+test against the check instead. The golden table in `tests/run.js` carries a
+score, a band and a check set for all 32 fixtures, so a scoring change states
+its own delta. A unit test fails if any check's points differ from what
+`/about` publishes: the rubric is a promise, and an engine scoring by rules the
+page does not list would break it.
+
+## M4 — The results experience — **part shipped v0.7.0; X-ray outstanding**
 
 **Ships:** the results screen (score, pillars, segmented navigation), the fix
 list with evidence and point deltas, the client-side X-ray with region
@@ -100,6 +110,13 @@ screens at both device sizes.
 **Done when:** the keyboard-only journey passes end to end, the overlap gate is
 green, the tour screenshots are reviewed for boundaries at 393 and 430 wide in
 light and dark, and p95 upload→results is under 20 s.
+
+*Status:* the results screen, the pillar breakdown, the fix list with evidence
+and point costs, the engine cards, the machine view and the upload states are
+live, as its own sub-screen with working Back navigation. The **client-side
+X-ray** — the original PDF rendered with bounding boxes over each finding — is
+not: it needs a self-hosted PDF.js build vendored into `dist/`, and the machine
+view delivers the same insight without one. It is the last piece of M4.
 
 ## M5 — Role fit and rewrites
 

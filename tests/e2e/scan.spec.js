@@ -36,7 +36,8 @@ async function upload(page, name, filename = 'cv.pdf') {
   // fetches the app page and answers 200. Wait for the outcome the callers
   // actually depend on.
   if (status === 201) {
-    await expect(page.locator('#card-read')).toBeVisible();
+    await expect(page.locator('#screen-result')).toBeVisible();
+    await expect(page.locator('#score-number')).not.toHaveText('—');
     await expect(page.locator('#read-download')).toHaveAttribute(
       'href', /^\/api\/scans\/[0-9a-f]{32}\/file$/);
   } else {
@@ -55,9 +56,9 @@ test.describe('scanning a CV', () => {
 
     expect(await upload(page, 'clean', 'priya-raman-cv.pdf')).toBe(201);
 
-    const read = page.locator('#card-read');
+    const read = page.locator('#screen-result');
     await expect(read).toBeVisible();
-    await expect(page.locator('#read-file')).toContainText('priya-raman-cv.pdf');
+    await expect(page.locator('#score-file')).toContainText('priya-raman-cv.pdf');
 
     // The facts a reader can act on, not a number Atsy has not computed.
     const facts = page.locator('#read-facts');
@@ -65,7 +66,7 @@ test.describe('scanning a CV', () => {
     await expect(facts).toContainText('Sections found');
     await expect(facts).toContainText('experience');
     await expect(facts).toContainText('Text order on the page');
-    await expect(read).toContainText('Scoring');
+    await expect(page.locator('#score-band')).not.toHaveText('Scanning…');
   });
 
   test('a two-column CV reports the columns and the sections they cost', async ({ page }) => {
@@ -74,7 +75,11 @@ test.describe('scanning a CV', () => {
 
     const facts = page.locator('#read-facts');
     await expect(facts.locator('[data-fact="Columns"]')).toContainText('more than one');
-    await expect(page.locator('#read-verdict')).toContainText('columns');
+    // The verdict now lives in the fix list, worst first, with the points it
+    // costs — which is more use than a sentence.
+    const fixes = page.locator('#fix-list');
+    await expect(fixes.locator('li').first()).toContainText('column');
+    await expect(fixes.locator('li').first()).toContainText('6 points');
 
     // A high text-order percentage on a two-column CV means the columns
     // interleave. It must never read as the reassuring green it looks like.
@@ -95,8 +100,8 @@ test.describe('scanning a CV', () => {
 
     await expect(page.locator('#upload-error')).toBeVisible();
     await expect(page.locator('#upload-error')).toContainText('picture of a CV');
-    // No result card for a scan that did not happen.
-    await expect(page.locator('#card-read')).toBeHidden();
+    // No results screen for a scan that did not happen.
+    await expect(page.locator('#screen-result')).toBeHidden();
   });
 
   test('a file that is not a PDF is refused before it is scanned', async ({ page }) => {
@@ -140,12 +145,21 @@ test.describe('scanning a CV', () => {
     await signIn(page, address('scan-history'));
     expect(await upload(page, 'clean', 'first-draft.pdf')).toBe(201);
 
+    // Back to the upload panel: the history card lives there, and the scan is
+    // in it with its score.
+    await page.getByRole('button', { name: 'Back to upload' }).click();
     await expect(page.locator('#card-history')).toBeVisible();
     await expect(page.locator('#history-list')).toContainText('first-draft.pdf');
+    await expect(page.locator('#history-list')).toContainText('/100');
+
+    // Re-opening from history brings the score back without another upload.
+    await page.getByRole('button', { name: /first-draft\.pdf/ }).click();
+    await expect(page.locator('#screen-result')).toBeVisible();
+    await expect(page.locator('#score-number')).not.toHaveText('—');
 
     page.once('dialog', (dialog) => dialog.accept());
     await page.getByRole('button', { name: 'Delete this scan' }).click();
-    await expect(page.locator('#card-read')).toBeHidden();
+    await expect(page.locator('#screen-result')).toBeHidden();
     await expect(page.locator('#history-list')).not.toContainText('first-draft.pdf');
   });
 
@@ -154,6 +168,7 @@ test.describe('scanning a CV', () => {
     expect(await upload(page, 'clean')).toBe(201);
     const href = await page.locator('#read-download').getAttribute('href');
 
+    await page.getByRole('button', { name: 'Back to upload' }).click();
     await page.getByRole('button', { name: 'Sign out' }).click();
     await expect(page.getByRole('heading', { name: 'Sign in to Atsy' })).toBeVisible();
 
@@ -169,6 +184,7 @@ test.describe('scanning a CV', () => {
     expect(await upload(page, 'clean')).toBe(201);
     const href = await page.locator('#read-download').getAttribute('href');
 
+    await page.getByRole('button', { name: 'Back to upload' }).click();
     page.once('dialog', (dialog) => dialog.accept());
     await page.getByRole('button', { name: 'Delete everything' }).click();
     await expect(page.getByRole('heading', { name: 'Sign in to Atsy' })).toBeVisible();
@@ -180,6 +196,71 @@ test.describe('scanning a CV', () => {
       return response.status;
     }, href);
     expect(status).toBe(401);
+  });
+
+  test('the results screen shows the score, the pillars, the fixes and the engines', async ({ page }) => {
+    await signIn(page, address('scan-results'));
+    expect(await upload(page, 'twoColumn')).toBe(201);
+
+    // A score a reader can act on, not a number on its own.
+    await expect(page.locator('#score-band')).toHaveText(/Excellent|Strong|Needs work|At risk/);
+    await expect(page.locator('#score-dial')).toHaveAttribute('data-band', /excellent|strong|work|risk/);
+    await expect(page.locator('#score-lede')).not.toHaveText('');
+
+    // Five pillars, each with its score out of its weight.
+    await expect(page.locator('#pillar-list li')).toHaveCount(5);
+    await expect(page.locator('#pillar-list')).toContainText('Parse & structure');
+    await expect(page.locator('#pillar-list')).toContainText('/ 35');
+
+    // Six engines, each with a risk band and a reason in plain words.
+    await expect(page.locator('#engine-list li')).toHaveCount(6);
+    await expect(page.locator('#engine-list')).toContainText('Oracle Taleo');
+    await expect(page.locator('#engine-list')).toContainText('Because');
+    await expect(page.locator('#engine-disclaimer'))
+      .toContainText('not a score from the engine itself');
+
+    // The fix list is ordered worst first and priced.
+    const first = page.locator('#fix-list li').first();
+    await expect(first).toContainText('Critical');
+    await expect(first).toContainText('points');
+  });
+
+  test('the machine view shows the text in the order the file stores it', async ({ page }) => {
+    await signIn(page, address('scan-machine'));
+    expect(await upload(page, 'twoColumn')).toBe(201);
+
+    // Folds ship closed, so the reader opens this one deliberately.
+    await page.getByText('What the machine actually reads').click();
+    const machine = page.locator('#machine-view');
+    await expect(machine.locator('.mline').first()).toBeVisible();
+    // The two-column fixture interleaves across the gutter, which is the whole
+    // point of showing this: SKILLS and EXPERIENCE end up adjacent.
+    await expect(machine).toContainText('SKILLS');
+    await expect(machine).toContainText('EXPERIENCE');
+  });
+
+  test('a fatal finding caps the score and explains the cap', async ({ page }) => {
+    await signIn(page, address('scan-capped'));
+    expect(await upload(page, 'hiddenText')).toBe(201);
+
+    await expect(page.locator('#score-number')).toHaveText('40');
+    await expect(page.locator('#score-cap')).toBeVisible();
+    await expect(page.locator('#score-cap')).toContainText('capped');
+    await expect(page.locator('#fix-list li').first()).toContainText('caps your score');
+  });
+
+  test('a re-opened scan keeps its score but not the text, which was never stored', async ({ page }) => {
+    await signIn(page, address('scan-reopen'));
+    expect(await upload(page, 'noMetrics')).toBe(201);
+    const score = await page.locator('#score-number').textContent();
+
+    await page.getByRole('button', { name: 'Back to upload' }).click();
+    await page.getByRole('button', { name: /noMetrics|cv\.pdf/ }).first().click();
+
+    await expect(page.locator('#score-number')).toHaveText(score);
+    await expect(page.locator('#fix-list li').first()).toBeVisible();
+    // The machine view is gone, because the text was never written down.
+    await expect(page.locator('#machine-view')).toBeHidden();
   });
 
   test('the retention sweep is wired to the cron trigger and runs clean', async ({ page }) => {
@@ -195,8 +276,7 @@ test.describe('scanning a CV', () => {
     // Nothing was due, so the scan and its file are untouched.
     await page.reload();
     await expect(page.locator('#card-history')).toBeVisible();
-    const href = await page.locator('#history-list').textContent();
-    expect(href).toContain('cv.pdf');
+    await expect(page.locator('#history-list')).toContainText('cv.pdf');
   });
 
   test('the upload panel and the result card fit the phone without sideways scroll', async ({ page }) => {
