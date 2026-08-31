@@ -408,8 +408,13 @@ export async function listScans(request, env, user) {
             page_count, score, band, r2_key IS NOT NULL AS has_file
        FROM scans WHERE user_id = ? ORDER BY created_at DESC LIMIT 50`,
   ).bind(user.id).all();
-  return json({
-    scans: results.map((row) => ({
+  // Newest first, so the delta on each scan compares it to the one before it
+  // in time — which is the question a reader actually has: did the change I
+  // just made help?
+  const scans = results.map((row, index) => {
+    const previous = results.slice(index + 1).find((older) =>
+      older.status === 'complete' && older.score !== null);
+    return {
       id: row.id,
       created_at: row.created_at,
       status: row.status,
@@ -419,10 +424,28 @@ export async function listScans(request, env, user) {
       page_count: row.page_count,
       score: row.score,
       band: row.band,
+      // The change against the previous scan, when there is one to compare to.
+      delta: (row.status === 'complete' && row.score !== null && previous)
+        ? row.score - previous.score
+        : null,
       // The reader can tell from the list whether the X-ray is still
       // available, instead of finding out by clicking into a purged scan.
       file_available: !!row.has_file,
-    })),
+    };
+  });
+
+  const scored = scans.filter((scan) => scan.score !== null);
+  return json({
+    scans,
+    // The summary a reader wants at a glance: are they getting better?
+    progress: scored.length >= 2
+      ? {
+        first: scored[scored.length - 1].score,
+        latest: scored[0].score,
+        change: scored[0].score - scored[scored.length - 1].score,
+        scans: scored.length,
+      }
+      : null,
   });
 }
 

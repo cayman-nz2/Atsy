@@ -3,6 +3,17 @@
 // RELEASES[0].version === VERSION — bump both together, every release.
 export const RELEASES = [
   {
+    version: '1.0.0',
+    date: '2026-08-31',
+    notes: [
+      'Atsy is finished and free: upload a CV, see the score, see exactly what a parser reads, and get a fix list ordered by what it costs you.',
+      'Your scan history now shows what changed between scans, so you can tell whether a fix actually worked.',
+      'A printable report you can save or send to someone who asked why your CV is not getting replies.',
+      'The whole product works with a keyboard alone, every page reflows at 200% zoom, and nothing important is carried by colour by itself.',
+      'Still free, still no ads, still nothing sold. Your CV is encrypted, deleted after 24 hours, and nobody at Atsy can read it.',
+    ],
+  },
+  {
     version: '0.8.0',
     date: '2026-08-31',
     notes: [

@@ -434,3 +434,33 @@ Atsy's own incidents start at #36.
     "your CV shows about 0 years" — a statement about Atsy dressed up as a
     statement about the reader. Any derived number needs to know when its
     inputs were missing, and say so louder than it says the number.
+
+63. **The nav bar broke reflow on every page at once.** At 200% zoom — a
+    viewport of roughly 215px, and a WCAG 1.4.10 requirement, not a nicety —
+    the wordmark plus the theme toggle and the sign-in button pushed the page
+    27px sideways. On all four pages, because the nav is shared. → `flex-wrap`
+    on the nav row, and tighter control padding under 280px with the 44px touch
+    target kept, because that is the accessible minimum rather than a style
+    choice. Shared components fail everywhere simultaneously: a reflow gate at
+    the narrowest supported width belongs in the suite, not in a review.
+
+64. **A mock document's heading was in the page's heading outline.** The demo CV
+    on the landing page used `<h4>Priya Raman</h4>` for the name on a fake CV.
+    It skipped h2 → h4, and worse, a screen reader user navigating by heading
+    landed on "Priya Raman" as though it were a section of the site. → It is
+    document content inside a picture of a document, so it is a paragraph.
+    Semantic elements are chosen for what a thing IS, never for how it should
+    look; the styling followed the class instead.
+
+65. **A test that read as a broken app, twice over.** The keyboard-only journey
+    typed a sign-in code and nothing happened: no input event, no submit, the
+    value already correct on screen. The cause was `OTP_ECHO`, which pre-fills
+    the code field in dev, plus `maxlength="6"` — the field was already full,
+    so every keystroke was swallowed and no `input` event fired. Nothing was
+    wrong with the product. Before that, the same test failed because
+    `focus()` does not wait for visibility, so it typed into a screen that had
+    not rendered yet — incident 58 again, in a new file. → A convenience that
+    only exists in dev changes what a test is testing; clear the field first so
+    the test exercises a person typing. And the "wait for the render, not the
+    response" rule needs applying in every new spec, not just the one where it
+    was learned.

@@ -29,6 +29,7 @@ import {
   REWRITABLE, DAILY_NEURON_BUDGET,
 } from '../src/rewrite.js';
 import { submitFeedback, adminStats, adminFeedback, resolveFeedback } from '../src/admin.js';
+import { scanReport } from '../src/report-page.js';
 import { RELEASES } from '../src/report.js';
 import {
   json, err, escapeHtml, nowSec, SECURITY_HEADERS,
@@ -1970,6 +1971,87 @@ await test('a feedback message is escaped before it reaches an admin view', asyn
   const body = await (await adminFeedback(new Request('https://atsy.test/'), env, owner)).json();
   assert.ok(!body.feedback[0].message.includes('<script>'), 'a script tag survived');
   assert.match(body.feedback[0].message, /&lt;script&gt;/);
+});
+
+/* ---------------- history, deltas and the report ---------------- */
+
+await test('history carries the change against the previous scan', async () => {
+  const env = testEnv();
+  const user = testUser(env);
+  const first = (await scanOf(env, user, 'twoColumn')).scan;
+  const second = (await scanOf(env, user, 'clean')).scan;
+  env.DB.prepare('UPDATE scans SET created_at = ? WHERE id = ?').bind(1000, first.id).run();
+  env.DB.prepare('UPDATE scans SET created_at = ? WHERE id = ?').bind(2000, second.id).run();
+
+  const list = await (await listScans(new Request('https://atsy.test/'), env, user)).json();
+  assert.equal(list.scans[0].id, second.id, 'newest first');
+  assert.equal(list.scans[0].delta, second.score - first.score);
+  // The oldest scan has nothing to compare against, and says so with null
+  // rather than a misleading zero.
+  assert.equal(list.scans[1].delta, null);
+
+  assert.ok(list.progress, 'no progress summary');
+  assert.equal(list.progress.first, first.score);
+  assert.equal(list.progress.latest, second.score);
+  assert.equal(list.progress.change, second.score - first.score);
+});
+
+await test('a single scan has no delta and no progress summary', async () => {
+  const env = testEnv();
+  const user = testUser(env);
+  await scanOf(env, user, 'clean');
+  const list = await (await listScans(new Request('https://atsy.test/'), env, user)).json();
+  assert.equal(list.scans[0].delta, null);
+  assert.equal(list.progress, null);
+});
+
+await test('the printable report holds the findings and escapes every one', async () => {
+  const env = testEnv();
+  const user = testUser(env);
+  const { scan } = await scanOf(env, user, 'twoColumn');
+
+  const response = await scanReport(new Request('https://atsy.test/'), env, user, scan.id);
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get('content-type'), /text\/html/);
+  assert.match(response.headers.get('cache-control'), /no-store/);
+  // Self-contained: it must survive being saved and opened offline.
+  assert.match(response.headers.get('content-security-policy'), /default-src 'none'/);
+
+  const html = await response.text();
+  assert.ok(html.includes('Atsy report'));
+  assert.ok(html.includes('Two-column layout'), 'the report is missing its findings');
+  assert.ok(html.includes('Parse &amp; structure') || html.includes('Parse & structure'));
+  assert.ok(html.includes('not a score from the engine itself'), 'the engine disclaimer is missing');
+  assert.ok(!html.includes('<script'), 'the report carries script');
+});
+
+await test('the report escapes evidence, which is text from a stranger PDF', async () => {
+  const env = testEnv();
+  const user = testUser(env);
+  const { scan } = await scanOf(env, user, 'clean');
+  // Force a finding whose evidence contains markup.
+  env.DB.prepare('UPDATE scans SET findings_json = ? WHERE id = ?').bind(JSON.stringify({
+    findings: [{
+      id: 'D09', pillar: 'D', severity: 'minor', points: 2, fatal: false,
+      title: '<img src=x onerror=alert(1)>',
+      message: 'A message with <b>markup</b> in it.',
+      evidence: [{ page: 1, text: '<script>alert(1)</script>', box: null }],
+    }],
+    caps: [], rawScore: 99, capped: false,
+  }), scan.id).run();
+
+  const html = await (await scanReport(new Request('https://atsy.test/'), env, user, scan.id)).text();
+  assert.ok(!html.includes('<script>alert(1)</script>'), 'evidence was not escaped');
+  assert.ok(!html.includes('<img src=x'), 'a finding title was not escaped');
+  assert.ok(html.includes('&lt;script&gt;'));
+});
+
+await test('one reader cannot fetch another reader\'s report', async () => {
+  const env = testEnv();
+  const owner = testUser(env, 'owner@example.com');
+  const stranger = testUser(env, 'stranger@example.com');
+  const { scan } = await scanOf(env, owner, 'clean');
+  assert.equal((await scanReport(new Request('https://atsy.test/'), env, stranger, scan.id)).status, 404);
 });
 
 /* ---------------- report ---------------- */
