@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en-NZ">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy — Atsy</title>
+<meta name="description" content="Exactly what Atsy stores, for how long, who can see it, and how to delete it.">
+<meta name="theme-color" content="#FAF8F4" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#101116" media="(prefers-color-scheme: dark)">
+<link rel="preload" href="/fonts/instrument-sans-var.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/atsy.css">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<nav class="nav">
+  <div class="wrap">
+    <a class="mark" href="/"><i></i>Atsy</a>
+    <div class="navactions">
+      <button class="themebtn" type="button" id="themebtn">Dark</button>
+      <a class="btn btn-quiet btn-nav" href="/app">Sign in</a>
+    </div>
+  </div>
+</nav>
+
+<main id="main" class="screenwrap">
+  <div class="wrap prose">
+    <p class="eyebrow">Privacy</p>
+    <h1 class="screen-title">What we keep, and for how long</h1>
+    <p class="screen-lede">A CV is one of the densest personal documents you own. This page says
+      exactly what Atsy holds, who can read it, and how to remove it. No legal wall, no hedging.</p>
+
+    <div class="card">
+      <h2 class="cardtitle">What Atsy stores today</h2>
+      <ul class="tightlist">
+        <li><strong>Your email address</strong> — so a sign-in code can reach you and you can come
+          back to your results. Kept until you delete your account.</li>
+        <li><strong>The country your request came from</strong> — used only to count where sign-ups
+          come from.</li>
+        <li><strong>Sign-in codes</strong>, stored as a one-way hash, deleted the moment they are
+          used and expiring after ten minutes either way.</li>
+        <li><strong>A salted hash of your IP address</strong> — never the address itself — purely to
+          stop someone flooding the sign-in form.</li>
+      </ul>
+      <p class="fineprint">Scanning is not live yet, so there is no CV, no file and no scan history
+        in the system at all.</p>
+    </div>
+
+    <div class="card">
+      <h2 class="cardtitle">When scanning arrives, this is the deal</h2>
+      <ul class="tightlist">
+        <li>Your file is <strong>encrypted before it is stored</strong>, with a key held by the
+          application, not by the storage.</li>
+        <li>The file is <strong>deleted automatically within 24 hours</strong>; the findings from it
+          go after 30 days.</li>
+        <li>The text pulled out of your CV is <strong>never saved</strong> — only the findings, with
+          short quotes so you can see what a fix refers to.</li>
+        <li><strong>Nobody at Atsy can read your CV.</strong> There is no admin screen for it; the
+          only view is yours, and a test in the build fails if that ever changes.</li>
+        <li>If you ask for AI-written suggestions, your name, email, phone, links and employers are
+          <strong>removed before anything is sent</strong>, one bullet at a time. Scoring itself
+          never uses AI.</li>
+        <li><strong>Delete everything</strong> in your account, any time, immediately.</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h2 class="cardtitle">What Atsy never does</h2>
+      <ul class="tightlist">
+        <li>No advertising, no analytics, no tracking pixels, no third-party scripts — the only
+          outside code on the whole site is Cloudflare's bot check on the sign-in form.</li>
+        <li>Your CV is never sold, shared, published, or used to train anything.</li>
+        <li>No recruiter, employer or agency has access to any of this.</li>
+        <li>No email from us except your sign-in codes and answers to feedback you send.</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h2 class="cardtitle">Your rights, and how to use them</h2>
+      <p>Atsy is run from New Zealand under the Privacy Act 2020, and follows the GDPR standard for
+        anyone in the UK or EU. You can see everything held about you (the app is that view),
+        correct it by signing in again with the right address, take it with you by downloading your
+        report, and erase it in one click from your account screen. Erasure is immediate and
+        irreversible.</p>
+      <p class="fineprint">Questions, or something you think is wrong here: reply to any Atsy email
+        and it reaches a person.</p>
+    </div>
+  </div>
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <span>Atsy &middot; free CV scanner &middot; <span id="version">v0.2.0</span></span>
+    <span><a href="/about">How the score works</a> &middot; <a href="/">Home</a></span>
+  </div>
+</footer>
+<script src="/app.js"></script>
+</body>
+</html>

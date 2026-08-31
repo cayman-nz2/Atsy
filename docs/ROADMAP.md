@@ -26,7 +26,7 @@ Pricey sending live OTPs since 2026-08-15), so no email domain setup is needed.
 
 ---
 
-## M0 — Skeleton and pipeline
+## M0 — Skeleton and pipeline — **shipped v0.1.0 (2026-08-31)**
 
 **Ships:** the repository scaffolding, `wrangler.jsonc`, `worker.js` routing,
 `src/version.js`, the landing shell with the real design tokens and fonts,
@@ -37,7 +37,7 @@ runner, Playwright config, and the screenshot tour script.
 verifies that `/api/health` reports the checked-out `VERSION`, and
 `atsy.vibecod3.app` serves the landing page over the custom domain.
 
-## M1 — Identity
+## M1 — Identity — **built v0.2.0; live verification waits on the owner's credentials**
 
 **Ships:** email OTP request/verify, sessions, sign-in and code screens,
 account menu, logout, `/privacy`, `/about`, delete-account cascade (with
@@ -47,6 +47,12 @@ and their tests.
 **Done when:** a real code arrives by email in under 30 s, the sixth wrong code
 in an hour is refused, a second browser cannot reuse a session cookie after
 logout, and the E2E suite signs in deterministically with `OTP_ECHO`.
+
+*Status:* everything but the first clause is proven by the suite. The email
+itself cannot be verified until the Worker is deployed, which needs the
+Cloudflare credentials and the real `atsy-db` id — until then the deploy job
+skips with a warning rather than shipping a Worker whose database binding
+cannot resolve.
 
 ## M2 — Extraction core
 

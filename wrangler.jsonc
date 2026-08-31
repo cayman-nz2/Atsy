@@ -13,16 +13,32 @@
   // through to worker.js. Custom asset headers live in public/_headers.
   "assets": { "directory": "./dist", "binding": "ASSETS" },
   "observability": { "enabled": true },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "atsy-db",
+      // Local `wrangler dev` ignores this id and uses a local SQLite file, so
+      // development and E2E work without it. A remote deploy needs the real
+      // one: the deploy job refuses to publish while this placeholder is here
+      // rather than shipping a Worker whose database binding cannot resolve.
+      "database_id": "PLACEHOLDER-RUN-WRANGLER-D1-CREATE-ATSY-DB"
+    }
+  ],
+  // Sends the sign-in codes. vibecod3.app is already onboarded as a sending
+  // domain, so this needs no secret.
+  "send_email": [{ "name": "SEND_EMAIL" }],
   "vars": {
     // OTP_ECHO and TURNSTILE_BYPASS are local/E2E flags passed with
     // `wrangler dev --var`. They must NEVER appear in this file.
     "ADMIN_EMAILS": "avishkapadia@gmail.com",
     "OWNER_EMAIL": "avishkapadia@gmail.com",
-    "EMAIL_FROM": "hello@vibecod3.app"
+    "EMAIL_FROM": "hello@vibecod3.app",
+    // Turnstile site keys are public. This is Cloudflare's always-passes test
+    // key: replace it with the real key for atsy.vibecod3.app, and add the
+    // matching TURNSTILE_SECRET_KEY as a GitHub secret so CI can sync it.
+    "TURNSTILE_SITE_KEY": "1x00000000000000000000AA"
   }
-  // Added in later milestones, once the owner has created them:
-  //   M1  turnstile site key var + TURNSTILE_SECRET_KEY worker secret
-  //   M1  d1_databases: DB -> atsy-db
-  //   M2  r2_buckets: CV -> atsy-cv, ai binding, send_email binding,
-  //       ratelimits, cron trigger for the retention sweep
+  // Added in later milestones:
+  //   M2  r2_buckets: CV -> atsy-cv, ai binding, ratelimits,
+  //       cron trigger for the retention sweep
 }
