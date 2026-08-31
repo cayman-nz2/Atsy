@@ -246,6 +246,14 @@ await test('the local bypass works only through a dev flag', async () => {
   assert.equal(await verifyTurnstile({ TURNSTILE_BYPASS: '1' }, '', null), true);
 });
 
+await test('the shipped Turnstile site key is a real one, not a test key', () => {
+  // Cloudflare's test keys (1x…, 2x…, 3x…) always pass or always fail. Any of
+  // them in production means the bot shield is decoration.
+  const config = read('wrangler.jsonc');
+  const key = config.match(/"TURNSTILE_SITE_KEY":\s*"([^"]+)"/)[1];
+  assert.ok(key.startsWith('0x'), `${key} is a Turnstile test key, not a real site key`);
+});
+
 await test('the sign-in page lets Turnstile reach its own servers', () => {
   // script-src and frame-src alone are not enough: the widget makes its own
   // network calls, and connect-src 'self' silently stopped them, so no token

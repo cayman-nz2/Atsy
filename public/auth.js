@@ -74,28 +74,61 @@
     return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
   }
 
+  // While a bot check is configured, the submit button waits for it. Letting
+  // someone press "Email me a code" before the widget has a token produces a
+  // refusal that reads like their fault and is not.
+  function setShieldState(ready, message) {
+    var button = document.getElementById('email-submit');
+    if (!button || !state.siteKey) return;
+    button.disabled = !ready;
+    if (!button.dataset.idle) button.dataset.idle = button.textContent;
+    button.textContent = ready ? button.dataset.idle : 'Checking your browser…';
+    setError('email-error', message || '');
+  }
+
   function renderTurnstile() {
     var slot = document.getElementById('turnstile-slot');
     if (!slot || !state.siteKey || !window.turnstile) return;
     slot.textContent = '';
+    setShieldState(false);
     state.widgetId = window.turnstile.render(slot, {
       sitekey: state.siteKey,
       theme: currentTheme(),
-      callback: function (token) { state.turnstileToken = token; },
-      'error-callback': function () { state.turnstileToken = ''; },
-      'expired-callback': function () { state.turnstileToken = ''; },
+      callback: function (token) { state.turnstileToken = token; setShieldState(true); },
+      'error-callback': function () {
+        state.turnstileToken = '';
+        setShieldState(false, 'The browser check could not run. Reload the page, or try another browser.');
+      },
+      'expired-callback': function () {
+        state.turnstileToken = '';
+        setShieldState(false, 'The browser check expired. It is refreshing…');
+        if (window.turnstile && state.widgetId !== null) window.turnstile.reset(state.widgetId);
+      },
     });
   }
 
   function loadTurnstile() {
     if (!state.siteKey || document.getElementById('turnstile-script')) return;
+    setShieldState(false);
     var script = document.createElement('script');
     script.id = 'turnstile-script';
     script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
     script.async = true;
     script.defer = true;
     script.onload = renderTurnstile;
+    script.onerror = function () {
+      setShieldState(false,
+        'The browser check could not load. Check your connection or any content blockers, then reload.');
+    };
     document.head.appendChild(script);
+    // A script that neither loads nor errors leaves the button disabled with
+    // no explanation, which is its own dead end.
+    setTimeout(function () {
+      if (!window.turnstile) {
+        setShieldState(false,
+          'The browser check is taking too long to load. Reload the page, or try another browser.');
+      }
+    }, 10000);
   }
 
   // Re-render the widget when the theme changes, so it never sits in the
@@ -125,7 +158,10 @@
     // A single-use bot-check token is spent whether or not the request
     // succeeded: reset it so a retry works.
     state.turnstileToken = '';
-    if (window.turnstile && state.widgetId !== null) window.turnstile.reset(state.widgetId);
+    if (window.turnstile && state.widgetId !== null) {
+      window.turnstile.reset(state.widgetId);
+      setShieldState(false);
+    }
 
     if (!result.ok) {
       setError('email-error', say(result.data && result.data.error));
