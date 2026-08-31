@@ -4,6 +4,9 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { VERSION } from '../src/version.js';
+import { extractDocument, UnreadablePdf } from '../src/extract/pdf.js';
+import { analyseLayout } from '../src/extract/layout.js';
+import { fixture, fixtureNames } from './fixtures/cvs.js';
 import { RELEASES } from '../src/report.js';
 import {
   json, err, escapeHtml, nowSec, SECURITY_HEADERS,
@@ -303,6 +306,129 @@ await test('no class name is styled by two different components', () => {
   }
   const clashes = [...owners.entries()].filter(([, count]) => count > 1).map(([name]) => `.${name}`);
   assert.deepEqual(clashes, [], `these classes set display in two separate rules: ${clashes.join(', ')}`);
+});
+
+/* ---------------- extraction ---------------- */
+
+const documents = new Map();
+const parse = async (name) => {
+  if (!documents.has(name)) documents.set(name, await extractDocument(fixture(name)));
+  return documents.get(name);
+};
+const layoutOf = async (name) => analyseLayout(await parse(name));
+
+await test('every fixture in the corpus parses', async () => {
+  for (const name of fixtureNames) {
+    const document = await parse(name);
+    assert.ok(document.pageCount >= 1, `${name} produced no pages`);
+  }
+});
+
+await test('the clean CV shows none of the defects', async () => {
+  const document = await parse('clean');
+  const layout = await layoutOf('clean');
+  assert.equal(document.hasTextLayer, true);
+  assert.equal(layout.multiColumn, false, 'a single-column CV must not be called two-column');
+  assert.equal(layout.hasTable, false);
+  assert.equal(layout.headerItems, 0, 'a name on the first line is not a running header');
+  assert.equal(document.invisibleTextRuns, 0);
+  assert.equal(document.backgroundColourTextRuns, 0);
+  assert.ok(layout.worstReadingOrder > 0.99, 'stored order should match reading order');
+});
+
+await test('a scanned PDF is recognised as having no text layer', async () => {
+  const document = await parse('imageOnly');
+  assert.equal(document.hasTextLayer, false);
+  assert.equal(document.charCount, 0);
+  assert.ok(document.pages[0].images[0].areaRatio > 0.5, 'the scan covers most of the page');
+});
+
+await test('a two-column layout is found by its gutter', async () => {
+  const layout = await layoutOf('twoColumn');
+  assert.equal(layout.multiColumn, true);
+  const { gutter } = layout.pages[0].columns;
+  assert.ok(gutter.width >= 12, `gutter was only ${gutter.width}pt wide`);
+  assert.ok(gutter.leftShare > 0.15 && gutter.rightShare > 0.15, 'both sides must hold content');
+  assert.ok(gutter.pairedShare > 0.4, 'most rows should straddle the gutter');
+});
+
+await test('frame-ordered columns are found by BOTH the gutter and the reading order', async () => {
+  // The two shapes of the same visual layout: text read across the gutter, and
+  // a sidebar stored entirely before the main column. They damage a parse
+  // differently, so they are separate findings.
+  const layout = await layoutOf('twoColumnFrames');
+  assert.equal(layout.multiColumn, true);
+  assert.ok(layout.worstReadingOrder < 0.9,
+    `stored order should diverge from reading order, got ${layout.worstReadingOrder}`);
+});
+
+await test('a table is reported as a table, and not also as two columns', async () => {
+  const layout = await layoutOf('tableLayout');
+  assert.ok(layout.hasTable, 'the table should be found');
+  assert.equal(layout.pages[0].table.rows >= 3, true);
+  assert.equal(layout.multiColumn, false, 'one problem must not be charged twice');
+  assert.equal(layout.pages[0].columns.suppressedByTable, true);
+});
+
+await test('contact details in a running header are found on every page', async () => {
+  const layout = await layoutOf('headerContact');
+  assert.ok(layout.headerItems >= 2, 'the header band should hold the contact line');
+  assert.equal(layout.repeatedHeader, true, 'the same band text on both pages is a running head');
+});
+
+await test('both kinds of hidden text are found, and only in the file that has them', async () => {
+  const stuffed = await parse('hiddenText');
+  assert.equal(stuffed.invisibleTextRuns, 1, 'text drawn in invisible render mode');
+  assert.equal(stuffed.backgroundColourTextRuns, 1, 'text drawn in white on white');
+  const clean = await parse('clean');
+  assert.equal(clean.invisibleTextRuns + clean.backgroundColourTextRuns, 0);
+});
+
+await test('a photo is found with its position and size', async () => {
+  const document = await parse('withPhoto');
+  const [photo] = document.pages[0].images;
+  assert.ok(photo, 'the photo should be found');
+  assert.ok(photo.top < document.pages[0].height / 3, 'it sits in the top third');
+  assert.ok(photo.areaRatio > 0.01 && photo.areaRatio < 0.2, 'it is a photo, not a scan');
+});
+
+await test('fonts are reported, including whether they are embedded', async () => {
+  const document = await parse('clean');
+  assert.ok(document.fonts.length >= 1);
+  assert.equal(document.fonts[0].embedded, false,
+    'a standard font with no embedded file must be reported as not embedded');
+});
+
+await test('page count is honoured and long documents are truncated, not refused', async () => {
+  const full = await parse('fourPage');
+  assert.equal(full.pageCount, 4);
+  assert.equal(full.truncated, false);
+  const clipped = await extractDocument(fixture('fourPage'), { maxPages: 2 });
+  assert.equal(clipped.pagesRead, 2);
+  assert.equal(clipped.truncated, true);
+  assert.equal(clipped.pageCount, 4, 'the real page count is still reported');
+});
+
+await test('a file that is not a PDF is refused before anything is parsed', async () => {
+  const notPdf = new TextEncoder().encode('PK\u0003\u0004 this is a zip');
+  await assert.rejects(() => extractDocument(notPdf), (error) => {
+    assert.equal(error instanceof UnreadablePdf, true);
+    assert.equal(error.reason, 'not_pdf');
+    return true;
+  });
+});
+
+await test('extraction is deterministic and leaves the caller\'s bytes intact', async () => {
+  // The whole product rests on the first half: same file, same result, every
+  // time. The second half is what makes it possible — PDF.js detaches the
+  // buffer it is handed, so extraction copies before parsing. Without that,
+  // the same bytes cannot be encrypted for storage after being scanned.
+  const bytes = fixture('clean');
+  const first = JSON.stringify(await extractDocument(bytes));
+  const second = JSON.stringify(await extractDocument(bytes));
+  assert.equal(first, second);
+  assert.equal(bytes.byteLength > 0, true, 'the input buffer must still be readable');
+  assert.equal(JSON.parse(first).byteLength, bytes.byteLength, 'the file size must be recorded');
 });
 
 /* ---------------- report ---------------- */

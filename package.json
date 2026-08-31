@@ -3,7 +3,7 @@
   "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "Free ATS CV scanner \u2014 see your CV the way a hiring machine sees it",
+  "description": "Free ATS CV scanner — see your CV the way a hiring machine sees it",
   "scripts": {
     "check": "node tools/check.js",
     "test": "node tests/run.js",
@@ -16,5 +16,8 @@
   "devDependencies": {
     "@playwright/test": "1.56.1",
     "wrangler": "4.118.0"
+  },
+  "dependencies": {
+    "unpdf": "^1.8.1"
   }
 }

@@ -185,3 +185,39 @@ Atsy's own incidents start at #36.
     was cut off mid-content. → Stacked views share one CSS grid cell
     (`grid-area: 1 / 1`), so the container is always as tall as its tallest
     view and switching cannot resize it.
+
+42. **PDF.js detaches the buffer it is handed** (M2). Parsing a file made the
+    caller's bytes unusable, so the same upload could not be parsed twice — and
+    in the Worker it would have meant the file could not be encrypted for
+    storage after being scanned. The determinism test caught it. → Extraction
+    copies its input before parsing. A function that reads something must not
+    consume it.
+
+43. **PDF.js's font ids carry a per-parse counter** (`g_d13_f1`, `g_d14_f1`, …),
+    and they were being written into the document model as the item's font.
+    Two scans of the same file returned different documents — the exact thing
+    the whole product promises never happens. → Internal ids are mapped to real
+    font names before they leave the extractor, and the determinism test
+    compares full serialised documents, not a summary.
+
+44. **The operator scanner restored only the transform on `Q`.** Text render
+    mode and fill colour are part of the graphics state too, so a single
+    invisible run — an OCR underlay, a clipped label — left every later run on
+    the page marked as hidden text. That is an accusation of keyword stuffing
+    against a CV that did nothing wrong. → Save and restore the whole state.
+    When a check can accuse someone, its false-positive path deserves a
+    fixture of its own.
+
+45. **The column check's own thresholds made it blind.** The spec's "gutter of
+    at least 8% of page width" was written before any PDF had been measured: at
+    48pt on A4 it misses most real sidebars. Worse, the rule rejecting
+    candidates when many lines "crossed" the gutter fired on exactly the
+    two-column layout it exists to find, because every row of a two-column page
+    has content on both sides. → Thresholds get validated against fixtures
+    before they are written into a spec, and a check that finds nothing on its
+    own positive fixture is broken, however sensible its rules read.
+
+46. **PDF.js reports fill colours as `'#rrggbb'` strings, not numbers.** The
+    white-on-white detector silently read NaN and never fired. → Handle both
+    shapes, and prove each detector fires on a fixture built to trigger it —
+    a detector that has never fired is not evidence of a clean corpus.
