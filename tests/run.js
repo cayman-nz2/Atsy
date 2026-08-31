@@ -6,6 +6,9 @@ import { join } from 'node:path';
 import { VERSION } from '../src/version.js';
 import { extractDocument, UnreadablePdf } from '../src/extract/pdf.js';
 import { analyseLayout } from '../src/extract/layout.js';
+import { detectSections } from '../src/extract/sections.js';
+import { canonicalSection } from '../src/lexicons/sections.js';
+import { extractEntities, parseDate, dateFamily, findDateRanges } from '../src/extract/entities.js';
 import { fixture, fixtureNames } from './fixtures/cvs.js';
 import { RELEASES } from '../src/report.js';
 import {
@@ -491,6 +494,116 @@ await test('extraction is deterministic and leaves the caller\'s bytes intact', 
   assert.equal(first, second);
   assert.equal(bytes.byteLength > 0, true, 'the input buffer must still be readable');
   assert.equal(JSON.parse(first).byteLength, bytes.byteLength, 'the file size must be recorded');
+});
+
+/* ---------------- sections and entities ---------------- */
+
+const sectionsOf = async (name) => detectSections(await parse(name), await layoutOf(name));
+const entitiesOf = async (name) => {
+  const document = await parse(name);
+  return extractEntities(document, await sectionsOf(name));
+};
+
+await test('canonical headings are matched, including through one typo', () => {
+  assert.equal(canonicalSection('EXPERIENCE'), 'experience');
+  assert.equal(canonicalSection('Work Experience'), 'experience');
+  assert.equal(canonicalSection('Experiance'), 'experience', 'one typo is still the same heading');
+  assert.equal(canonicalSection('Education & Training'), 'education');
+  assert.equal(canonicalSection('Professional Summary'), 'summary');
+  assert.equal(canonicalSection('My Journey'), null);
+  assert.equal(canonicalSection('What I Bring'), null);
+});
+
+await test('a conventional CV yields every required section', async () => {
+  const sections = await sectionsOf('clean');
+  assert.deepEqual(sections.missingRequired, []);
+  assert.deepEqual(sections.found.sort(), ['education', 'experience', 'skills', 'summary']);
+  assert.deepEqual(sections.unknownHeadings, []);
+  assert.ok(sections.preamble.length >= 3, 'the contact block sits above the first heading');
+});
+
+await test('creative headings are reported, and the name is not mistaken for one', async () => {
+  const sections = await sectionsOf('oddHeadings');
+  assert.deepEqual(sections.unknownHeadings, ['WHO I AM', 'MY JOURNEY', 'WHAT I BRING']);
+  assert.ok(sections.missingRequired.includes('experience'));
+  // The name and job title are set large at the top of page one. Reporting
+  // them as unrecognised headings would send people to fix the one part of the
+  // CV that is already conventional.
+  assert.ok(!sections.unknownHeadings.includes('Priya Raman'));
+  assert.ok(!sections.unknownHeadings.includes('Operations Manager'));
+});
+
+await test('date families are told apart, and mixing them is caught', () => {
+  assert.equal(dateFamily('03/2023'), 'numeric');
+  assert.equal(dateFamily('Mar 2023'), 'monthAbbrev');
+  assert.equal(dateFamily('March 2023'), 'monthFull');
+  assert.equal(dateFamily('2023'), 'yearOnly');
+  assert.equal(dateFamily('sometime last year'), null);
+});
+
+await test('dates parse to a year and a month, and open ends are recognised', () => {
+  assert.deepEqual(parseDate('Mar 2023'), { year: 2023, month: 3 });
+  assert.deepEqual(parseDate('03/2023'), { year: 2023, month: 3 });
+  assert.deepEqual(parseDate('March 2023'), { year: 2023, month: 3 });
+  assert.deepEqual(parseDate('2014'), { year: 2014, month: null });
+  assert.deepEqual(parseDate('Present'), { open: true });
+  assert.deepEqual(parseDate('now'), { open: true });
+  assert.equal(parseDate('not a date'), null);
+});
+
+await test('a date range is read from the forms CVs actually use', () => {
+  const dash = findDateRanges('Mar 2023 - Present')[0];
+  assert.equal(dash.open, true);
+  assert.equal(dash.family, 'monthAbbrev');
+  const numeric = findDateRanges('06/2019 - 02/2023')[0];
+  assert.deepEqual(numeric.from, { year: 2019, month: 6 });
+  assert.deepEqual(numeric.to, { year: 2023, month: 2 });
+  assert.equal(findDateRanges('Managed rosters for 24 staff').length, 0);
+});
+
+await test('the contact block is read from a conventional CV', async () => {
+  const { contact } = await entitiesOf('clean');
+  assert.equal(contact.name, 'Priya Raman');
+  assert.equal(contact.email, 'priya.raman@example.com');
+  assert.ok(contact.phone, 'a phone number should be found');
+  assert.equal(contact.phone.international, true, 'the number carries a country code');
+  assert.ok(contact.link.includes('linkedin.com'));
+});
+
+await test('roles are built with title, employer, dates and tenure', async () => {
+  const { roles, reverseChronological, hasOpenEndedCurrentRole } = await entitiesOf('clean');
+  assert.equal(roles.length, 2);
+  assert.equal(roles[0].title, 'Operations Manager');
+  assert.equal(roles[0].employer, 'Kauri Logistics');
+  assert.equal(roles[0].range.open, true, 'the current role runs to Present');
+  assert.equal(roles[1].months, 44, 'Jun 2019 to Feb 2023 is 44 months');
+  assert.equal(reverseChronological, true);
+  assert.equal(hasOpenEndedCurrentRole, true);
+});
+
+await test('bullets are the claims, not the job titles or the dates', async () => {
+  const { bullets } = await entitiesOf('clean');
+  assert.equal(bullets.length, 5);
+  assert.ok(bullets.every((bullet) => !/^Operations Manager,/.test(bullet)),
+    'a role heading is structure, not a claim about what was done');
+  assert.ok(bullets.some((bullet) => bullet.includes('82% to 96%')));
+});
+
+await test('two date formats in one CV are caught', async () => {
+  const chaotic = await entitiesOf('dateChaos');
+  assert.equal(chaotic.mixedDateFormats, true);
+  assert.equal(chaotic.dateFamilies.length, 2);
+  const clean = await entitiesOf('clean');
+  assert.equal(clean.mixedDateFormats, false);
+});
+
+await test('a two-column layout costs the CV its sections and its roles', async () => {
+  // Not a defect in the extractor: it is the damage the layout does, and the
+  // reason the finding matters.
+  const sections = await sectionsOf('twoColumn');
+  const entities = await entitiesOf('twoColumn');
+  assert.ok(sections.missingRequired.includes('experience'));
+  assert.equal(entities.roles.length, 0);
 });
 
 /* ---------------- report ---------------- */

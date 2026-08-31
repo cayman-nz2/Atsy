@@ -18,10 +18,9 @@
       "binding": "DB",
       "database_name": "atsy-db",
       // Local `wrangler dev` ignores this id and uses a local SQLite file, so
-      // development and E2E work without it. A remote deploy needs the real
-      // one: the deploy job refuses to publish while this placeholder is here
-      // rather than shipping a Worker whose database binding cannot resolve.
-      "database_id": "PLACEHOLDER-RUN-WRANGLER-D1-CREATE-ATSY-DB"
+      // development and E2E work without it. Created 2026-08-31 by the
+      // provision workflow.
+      "database_id": "53cd59e3-1822-4b78-b2d6-cabbadeaba8d"
     }
   ],
   // Sends the sign-in codes. vibecod3.app is already onboarded as a sending
