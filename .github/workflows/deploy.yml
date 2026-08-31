@@ -7,13 +7,16 @@ name: Deploy to Cloudflare
 on:
   push:
     branches: [main]
+  # Pull requests run the same gates, so nothing merges untested.
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 # Deploys must land in merge order: two quick merges otherwise race and the
 # older SHA can publish last while both runs show green.
 concurrency:
-  group: deploy-main
-  cancel-in-progress: false
+  group: ${{ github.event_name == 'pull_request' && format('pr-{0}', github.ref) || 'deploy-main' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   test:
@@ -49,7 +52,7 @@ jobs:
     # Until the owner adds the Cloudflare credentials, this job is skipped
     # rather than failing: a red main would block every merge for a reason
     # that is not a defect. It starts deploying the moment the secrets exist.
-    if: ${{ github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' }}
+    if: ${{ github.event_name != 'pull_request' }}
     steps:
       - uses: actions/checkout@v4
 
