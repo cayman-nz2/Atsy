@@ -371,3 +371,28 @@ Atsy's own incidents start at #36.
     current page, so it turns a missing value into a successful request and
     hides the failure. Reproduced by injecting a 600 ms delay before the render:
     the old helper fails, the new one passes.
+
+59. **The E2E dev server died mid-suite and nine tests reported failures — one
+    real cause, eight cascade.** On a main-branch run, `wrangler dev` logged
+    `disconnected: ::write(): Broken pipe`, then an empty error, then wrote its
+    log and exited. The next test timed out after 30 s and every test after it
+    got `net::ERR_CONNECTION_REFUSED`. The identical commit had passed on its
+    PR run minutes earlier, and the suite took 1.0 m instead of the usual ~22 s
+    — a heavily loaded runner.
+    I suspected a pdf.js resource leak, since `extractDocument` never released
+    the document, and measured it before claiming it: retained heap after 57
+    parses is **13 MB with or without** the release, so the documents were
+    already being collected and there was no leak. The hypothesis was wrong and
+    the measurement is what settled it. (Two smaller true findings came out of
+    looking: the release call belongs on `document.loadingTask.destroy()`, not
+    `document.destroy()`, which does not exist on unpdf's proxy and throws; and
+    per-page `cleanup()` does lower the peak. Both kept, described as hygiene
+    rather than a cure.)
+    → **The cause of the process death is still unknown.** Recorded as unknown
+    rather than dressed up: "flake" is not a root cause, and neither is a fix
+    that measurement does not support. What is known: one dead dev server
+    invalidates every test after it, so a run with a `[WebServer]` error
+    followed by a wall of `ERR_CONNECTION_REFUSED` is *one* incident — read the
+    first failure, never the count. If this recurs, the next thing to try is
+    capturing `~/.config/.wrangler/logs/*.log` as a CI artifact, which is where
+    workerd wrote its side of the story and which this run discarded.
