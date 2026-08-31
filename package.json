@@ -1,9 +1,9 @@
 {
   "name": "atsy",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
-  "description": "Free ATS CV scanner — see your CV the way a hiring machine sees it",
+  "description": "Free ATS CV scanner \u2014 see your CV the way a hiring machine sees it",
   "scripts": {
     "check": "node tools/check.js",
     "test": "node tests/run.js",
@@ -11,7 +11,8 @@
     "dev": "npm run build && npx wrangler@4 dev --var OTP_ECHO:1 --var TURNSTILE_BYPASS:1",
     "e2e": "npm run build && npx wrangler d1 migrations apply atsy-db --local && npx playwright test --config playwright.config.js",
     "tour": "npm run build && npx wrangler d1 migrations apply atsy-db --local && TOUR=1 npx playwright test --config playwright.config.js tests/e2e/tour.spec.js",
-    "deploy": "npm run check && npm test && npm run build && npx wrangler@4 deploy"
+    "deploy": "npm run check && npm test && npm run build && npx wrangler@4 deploy",
+    "og": "node tools/og-image.js"
   },
   "devDependencies": {
     "@playwright/test": "1.56.1",

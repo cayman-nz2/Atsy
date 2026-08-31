@@ -1,0 +1,65 @@
+# One-off provisioning of the Cloudflare resources Atsy needs, run by hand.
+#
+# It is separate from deploy.yml on purpose: creating infrastructure is not
+# something that should happen on every merge. Everything here is idempotent —
+# running it again reports what already exists instead of failing.
+#
+# After a run, copy the printed database_id into wrangler.jsonc.
+name: Provision Cloudflare resources
+
+on:
+  workflow_dispatch:
+
+jobs:
+  provision:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Create the D1 database and the R2 bucket
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -o pipefail
+
+          echo "::group::D1 database atsy-db"
+          npx wrangler@4 d1 create atsy-db 2>&1 | tee d1.log || \
+            echo "d1 create reported an error (it already exists, or the token lacks D1 edit)"
+          echo "::endgroup::"
+
+          echo "::group::R2 bucket atsy-cv"
+          npx wrangler@4 r2 bucket create atsy-cv 2>&1 | tee r2.log || \
+            echo "r2 create reported an error (it already exists, or the token lacks R2 edit)"
+          echo "::endgroup::"
+
+          echo "::group::Existing D1 databases"
+          npx wrangler@4 d1 list --json 2>/dev/null | tee d1-list.json || true
+          echo "::endgroup::"
+
+          # The id is what wrangler.jsonc needs. Print it on its own line so it
+          # can be read straight out of the run log.
+          id=$(node -e "
+            const fs = require('fs');
+            let id = '';
+            try {
+              const list = JSON.parse(fs.readFileSync('d1-list.json', 'utf8'));
+              const db = list.find((entry) => entry.name === 'atsy-db');
+              if (db) id = db.uuid || db.database_id || '';
+            } catch {}
+            if (!id) {
+              const log = fs.existsSync('d1.log') ? fs.readFileSync('d1.log', 'utf8') : '';
+              const match = log.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/);
+              id = match ? match[0] : '';
+            }
+            console.log(id);
+          ")
+          echo "ATSY_DB_DATABASE_ID=${id}"
+          if [ -z "$id" ]; then
+            echo "::error::could not determine the atsy-db database id — check the log above"
+            exit 1
+          fi

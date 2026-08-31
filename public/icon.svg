@@ -1,7 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Atsy">
-  <rect width="32" height="32" rx="7" fill="#FAF8F4"/>
-  <rect x="6" y="5" width="20" height="22" rx="2.5" fill="#FFFFFF" stroke="#14161A" stroke-width="1.6"/>
-  <path d="M10 11h8M10 15h12M10 19h6" stroke="#14161A" stroke-width="1.6" stroke-linecap="round"/>
-  <rect x="17.5" y="17.5" width="11" height="11" rx="2.2" fill="#3A32E0"/>
-  <path d="M20.4 23h5.2M23 20.4v5.2" stroke="#FFFFFF" stroke-width="1.7" stroke-linecap="round"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Atsy">
+  <rect width="64" height="64" rx="14" fill="#3A32E0"/>
+  <!-- The page. Two heavy lines and one short one still read as a document at
+       16px, where three thin lines turn into a smudge. -->
+  <rect x="13" y="12" width="31" height="40" rx="3" fill="#FAF8F4"/>
+  <path d="M19.5 23h18M19.5 31h18M19.5 39h10" stroke="#14161A" stroke-width="3.4" stroke-linecap="round"/>
+  <!-- The signal mark, sitting on the corner of the page. One solid shape, so
+       it survives being drawn 16 pixels wide. -->
+  <path d="M45 30 L57 42 L45 54 L33 42 Z" fill="#14161A"/>
+  <path d="M45 35.5 L51.5 42 L45 48.5 L38.5 42 Z" fill="#3A32E0"/>
 </svg>
