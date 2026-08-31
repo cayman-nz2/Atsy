@@ -95,7 +95,7 @@ injected from a CDN after load).
 | Role | Face | Use |
 | --- | --- | --- |
 | Display | **Bricolage Grotesque** (variable, OFL) | Wordmark, hero, score numeral, section titles |
-| UI / body | **Inter** (variable, OFL) | Everything else |
+| UI / body | **Instrument Sans** (variable, OFL) | Everything else — chosen over Inter, which every tool defaults to |
 | Machine | **JetBrains Mono** (variable, OFL) | The machine view, evidence snippets, file names |
 
 Scale (fluid, `clamp()`, 393px → 1440px):
@@ -323,7 +323,14 @@ must therefore render exactly what a user sees:
 
 ---
 
-## 10. Awwwards self-assessment (target ≥ 7.0)
+## 10. Approved visual direction
+
+A published, interactive version of this direction — the X-ray demo, the result
+screen, the palette and type specimens, and the motion table — is the design
+artifact reviewed with the owner on 2026-08-31. Implementation follows it
+exactly; any deviation is a decision to raise, not a detail to improvise.
+
+## 11. Awwwards self-assessment (target ≥ 7.0)
 
 | Criterion | Weight | How Atsy earns it |
 | --- | --- | --- |
