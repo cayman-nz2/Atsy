@@ -12,7 +12,7 @@ async function jsFiles(dir) {
     if (SKIP.has(entry.name)) continue;
     const path = join(dir, entry.name);
     if (entry.isDirectory()) out.push(...(await jsFiles(path)));
-    else if (entry.name.endsWith('.js')) out.push(path);
+    else if (entry.name.endsWith('.js') || entry.name.endsWith('.mjs')) out.push(path);
   }
   return out;
 }
