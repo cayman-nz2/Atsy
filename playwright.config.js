@@ -24,11 +24,18 @@ export default defineConfig({
     // Every request in the suite comes from one address, so the per-IP cap is
     // raised here — and only here — to keep the suite order-independent. The
     // per-email cap keeps its production value and is asserted in auth.spec.js.
-    // TURNSTILE_SITE_KEY is blanked as well as bypassed: with a real key the
-    // page tries to load a widget it cannot reach from a sandbox, and the
-    // submit button correctly waits forever for a token — the same lockout
-    // that hit the live site. A test environment with no shield should look
-    // like one to the client as well as the server.
+    // TURNSTILE_SITE_KEY is blanked as well as bypassed, so a test environment
+    // with no shield looks like one to the client as well as the server, and
+    // the rest of the suite never waits on a widget.
+    // This comment used to add that with a real key the button "correctly waits
+    // forever for a token — the same lockout that hit the live site", and
+    // treated that as a sandbox limitation. It was not: the slot hid itself
+    // while empty and the renderer refused to render into a hidden element, so
+    // the widget never appeared in production either. Blanking the key here
+    // removed the only path that could have shown it, and the front door
+    // shipped broken. tests/e2e/turnstile.spec.js now covers that path with a
+    // stubbed api.js, which needs no network — never delete it in favour of
+    // "the sandbox cannot reach Cloudflare".
     // CV_MASTER_KEY is a Worker secret in production and has no counterpart in
     // wrangler.jsonc, so local dev has none and every upload would fail closed
     // with "storage unavailable" — correctly, and uselessly for a test. This
