@@ -70,33 +70,23 @@ jobs:
       # A copy nobody counted is a copy nobody has checked. Every table in the
       # source is counted in both databases and the two are compared.
       #
-      # The comparison lives in tools/compare-d1-counts.mjs rather than in a
-      # `node -e` here. Inlined, it was YAML quoting bash quoting a JS template
-      # literal containing backticks, and it failed with no output whatsoever —
-      # a verification step that can fail silently verifies nothing.
+      # tools/count-d1-tables.mjs runs one query per table, which is the only
+      # shape that returns the numbers: D1 rejects a dozen-way UNION ALL, and
+      # wrangler answers a multi-statement --file with a summary rather than
+      # the rows each statement selected. It drives wrangler through an
+      # argument array, so no SQL is quoted into a shell.
       - name: Every table must have the same number of rows in both
         run: |
-          set -o pipefail
-
-          echo "listing the source's tables"
-          npx wrangler@4.118.0 d1 execute "$OLD_DB" --remote -y --json --command \
-            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name" \
-            > tables.json
-
-          echo "building the count query"
-          node tools/build-count-query.mjs tables.json count.sql
-          cat count.sql
-
-          echo "counting both databases"
-          npx wrangler@4.118.0 d1 execute "$OLD_DB" --remote -y --json --file count.sql > old.json
-          npx wrangler@4.118.0 d1 execute "$NEW_DB" --remote -y --json --file count.sql > new.json
-
+          echo "counting $OLD_DB"
+          node tools/count-d1-tables.mjs "$OLD_DB" old.json
+          echo "counting $NEW_DB"
+          node tools/count-d1-tables.mjs "$NEW_DB" new.json
           node tools/compare-d1-counts.mjs old.json new.json
 
       - name: Show what Cloudflare actually returned, when the compare fails
         if: failure()
         run: |
-          for f in tables.json count.sql old.json new.json; do
+          for f in old.json new.json; do
             echo "::group::$f"
             head -c 2000 "$f" 2>/dev/null || echo "(not written)"
             echo

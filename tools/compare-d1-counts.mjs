@@ -22,8 +22,12 @@ function rowsOf(path) {
     // version wasted a run.
     throw new Error(`${path} is not JSON. First 300 characters:\n${raw.slice(0, 300)}`);
   }
+  // Either a plain [{t, n}] array from count-d1-tables.mjs, or wrangler's own
+  // [{results: [...]}] envelope. Accepting both keeps this usable by hand.
   const blocks = Array.isArray(parsed) ? parsed : [parsed];
-  const rows = blocks.flatMap((block) => (block && block.results) || []);
+  const rows = blocks.every((block) => block && 't' in block)
+    ? blocks
+    : blocks.flatMap((block) => (block && block.results) || []);
   if (!rows.length) {
     throw new Error(`${path} carried no rows. Shape was:\n${JSON.stringify(parsed).slice(0, 300)}`);
   }
