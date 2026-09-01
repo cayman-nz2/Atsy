@@ -18,10 +18,20 @@
 #                PDF become blobs and data URLs inside the browser. They are
 #                the reader's file, not a third party's, and no host is added.
 # 'unsafe-eval' is NOT granted: PDF.js is started with isEvalSupported false.
+#
+# The `! Content-Security-Policy` line is load-bearing, not tidying. EVERY rule
+# that matches a request is applied — a more specific path does not replace the
+# broader one — so without it the response carries two policies, and a browser
+# enforces all of them and keeps the strictest answer for each directive. The
+# site-wide `script-src 'self'` then silently overrode the wider policy below
+# and the sign-in bot check could not load at all. Delete the line and the
+# front door breaks; a unit test and a post-deploy check both refuse it.
 /app
+  ! Content-Security-Policy
   Content-Security-Policy: default-src 'self'; script-src 'self' https://challenges.cloudflare.com; style-src 'self'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' blob: https://challenges.cloudflare.com; worker-src 'self' blob:; frame-src https://challenges.cloudflare.com; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'
 
 /app.html
+  ! Content-Security-Policy
   Content-Security-Policy: default-src 'self'; script-src 'self' https://challenges.cloudflare.com; style-src 'self'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' blob: https://challenges.cloudflare.com; worker-src 'self' blob:; frame-src https://challenges.cloudflare.com; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'
 
 # The admin view loads no third-party code at all, so it keeps the strict

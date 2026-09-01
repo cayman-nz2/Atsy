@@ -532,3 +532,33 @@ Atsy's own incidents start at #36.
     because the change "was only configuration". → Configuration changes are
     exactly the ones the cheap gates cannot see. Pick the gate by what the
     change can break, not by how large the diff looks.
+
+72. **Two security policies, and the browser obeyed both.** The live sign-in
+    page could not load its bot check: the button sat on "Checking your
+    browser…" and nobody could request a code. `_headers` applies **every**
+    rule that matches a request — a specific path does not replace a broader
+    one — so `/*` (`script-src 'self'`) and `/app` (which admits Turnstile)
+    both shipped, and a browser given two `Content-Security-Policy` headers
+    enforces all of them and keeps the strictest answer per directive. The
+    strict one won. Chrome said so plainly — *Refused to load … because it
+    violates "script-src 'self'"* — and the page's own `onerror` message was
+    accurate all along. → `! Content-Security-Policy` detaches the site-wide
+    policy before the wider one is set. Three checks now: a unit test that any
+    rule setting its own CSP must detach first, an E2E test asserting exactly
+    one policy header, and a post-deploy check that reads the live page.
+    The lesson is about the shape of the mistake: a "more specific rule wins"
+    intuition borrowed from CSS is simply not how headers compose, and
+    security controls fail in the safe-looking direction — the page looked
+    *more* locked down, not broken.
+
+73. **A header assertion that could not see duplicates.** An E2E test had
+    guarded this exact page since v0.6.0: `expect(csp).toContain
+    ('https://challenges.cloudflare.com')`. It passed the entire time the
+    front door was broken, because Playwright's `headers()` flattens repeated
+    headers into one comma-joined string — so the strict policy and the wide
+    one merged into a value containing the substring being asserted. → Count
+    with `headersArray()`, and ask the browser rather than the text: a CSP
+    block raises `securitypolicyviolation`, and a network failure does not, so
+    the check is exact and works offline. A test that reads a *rendering* of
+    the thing instead of the thing can be green for years while the product
+    is broken.

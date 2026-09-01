@@ -137,13 +137,46 @@ test.describe('sign-in API rules', () => {
     expect((await replay.json()).error).toBe('code_expired');
   });
 
-  test('the sign-in page admits Turnstile and nothing else', async ({ request }) => {
-    const csp = (await request.get('/app')).headers()['content-security-policy'];
-    expect(csp).toContain('https://challenges.cloudflare.com');
-    expect(csp).toContain("default-src 'self'");
-    expect(csp).toContain("object-src 'none'");
+  // A page served two Content-Security-Policy headers is held to BOTH, and the
+  // browser enforces whichever is stricter for each directive. _headers applies
+  // every matching rule rather than letting the specific one win, so the
+  // site-wide `script-src 'self'` and the /app rule that admits Turnstile both
+  // shipped — and the strict one silently won. The bot check never loaded on
+  // the live sign-in page. `headers()` cannot see this: it joins duplicates
+  // with ", ", so a `toContain` on the merged string passed throughout.
+  test('the sign-in page is served exactly one CSP, not two that intersect', async ({ request }) => {
+    const policies = (await request.get('/app')).headersArray()
+      .filter((h) => h.name.toLowerCase() === 'content-security-policy');
+    expect(policies).toHaveLength(1);
+    expect(policies[0].value).toContain('https://challenges.cloudflare.com');
+    expect(policies[0].value).toContain("default-src 'self'");
+    expect(policies[0].value).toContain("object-src 'none'");
 
-    const landing = (await request.get('/')).headers()['content-security-policy'];
-    expect(landing).not.toContain('challenges.cloudflare.com');
+    const landing = (await request.get('/')).headersArray()
+      .filter((h) => h.name.toLowerCase() === 'content-security-policy');
+    expect(landing).toHaveLength(1);
+    expect(landing[0].value).not.toContain('challenges.cloudflare.com');
+  });
+
+  // Asserting on the header text is still a reading of the policy rather than
+  // the policy itself. Ask the browser instead: a CSP block raises
+  // securitypolicyviolation, and a network failure does not — so this says
+  // "the policy permits it" whether or not the sandbox can reach Cloudflare.
+  test('a browser on the sign-in page is allowed to fetch the bot check', async ({ page }) => {
+    await page.goto('/app');
+    const violated = await page.evaluate(() => new Promise((resolve) => {
+      let directive = null;
+      document.addEventListener('securitypolicyviolation', (event) => {
+        if (event.blockedURI.includes('challenges.cloudflare.com')) directive = event.violatedDirective;
+      });
+      const script = document.createElement('script');
+      script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+      const settle = () => setTimeout(() => resolve(directive), 0);
+      script.onload = settle;
+      script.onerror = settle;
+      document.head.appendChild(script);
+      setTimeout(() => resolve(directive), 5000);
+    }));
+    expect(violated).toBeNull();
   });
 });

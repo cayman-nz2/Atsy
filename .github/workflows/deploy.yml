@@ -335,3 +335,31 @@ jobs:
             echo "attempt $i: live='${live}' expected='${expected}' — retrying"; sleep 10
           done
           echo "::error::the deployed version never matched (wanted $expected, saw '${live}')"; exit 1
+
+      # The sign-in page is the front door, and its bot check is the only
+      # third-party script Atsy loads. A page served TWO Content-Security-Policy
+      # headers is held to both, and the browser takes the stricter value for
+      # each directive — so the site-wide `script-src 'self'` silently overrode
+      # the /app rule that admits Turnstile, and the widget could not load on
+      # the live site. Nothing local catches a `_headers` merge going wrong on
+      # the edge, so it is asserted here, against production, on every deploy.
+      - name: The sign-in page still admits its bot check
+        if: steps.creds.outputs.ready == 'yes' && steps.db.outputs.ready == 'yes'
+        run: |
+          headers=$(curl -fsSL -o /dev/null -D - https://atsy.vibecod3.app/app || true)
+          if [ -z "$headers" ]; then
+            echo "::warning::could not reach /app to read its headers — not treating that as a failure"
+            exit 0
+          fi
+          count=$(printf '%s\n' "$headers" | grep -ci '^content-security-policy:' || true)
+          if [ "$count" != "1" ]; then
+            echo "::error::/app is served ${count} Content-Security-Policy headers. A browser enforces every one of them, so the strictest wins and the bot check cannot load. Exactly one is required."
+            printf '%s\n' "$headers" | grep -i '^content-security-policy:'
+            exit 1
+          fi
+          if ! printf '%s\n' "$headers" | grep -i '^content-security-policy:' | grep -q 'challenges.cloudflare.com'; then
+            echo "::error::/app's CSP does not allow challenges.cloudflare.com — the sign-in bot check will not load."
+            printf '%s\n' "$headers" | grep -i '^content-security-policy:'
+            exit 1
+          fi
+          echo "/app carries one CSP and it admits the bot check"
