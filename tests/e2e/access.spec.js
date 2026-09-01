@@ -10,6 +10,22 @@ const address = (name) => `${name}-${Date.now()}@example.test`;
 
 const PAGES = ['/', '/about', '/privacy', '/app'];
 
+// Sideways overflow, measured only once the layout it describes has settled.
+// Resizing the viewport and reading scrollWidth in the next call measures a
+// frame that may still be mid-reflow, and a page whose self-hosted fonts have
+// not loaded is laid out in fallback metrics that are not the ones the reader
+// gets. Both make the number real but premature — incidents 58, 66 and 67, in
+// which waiting on a proxy for readiness rather than readiness itself produced
+// a result that was wrong intermittently and therefore hardest to believe.
+async function sidewaysOverflow(page) {
+  await page.evaluate(() => document.fonts.ready);
+  await page.evaluate(() => new Promise((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(resolve));
+  }));
+  return page.evaluate(() =>
+    document.documentElement.scrollWidth - document.documentElement.clientWidth);
+}
+
 test.describe('accessibility', () => {
   for (const path of PAGES) {
     test(`${path} has one h1, ordered headings, and a landmark`, async ({ page }) => {
@@ -174,8 +190,7 @@ test.describe('accessibility', () => {
     await page.setViewportSize({ width: 215, height: 466 });
     for (const path of PAGES) {
       await page.goto(path);
-      const overflow = await page.evaluate(() =>
-        document.documentElement.scrollWidth - document.documentElement.clientWidth);
+      const overflow = await sidewaysOverflow(page);
       expect(overflow, `${path} scrolls sideways at 200% zoom`).toBeLessThanOrEqual(1);
     }
   });
@@ -200,16 +215,14 @@ test.describe('accessibility', () => {
     await expect(page.locator('#screen-result')).toBeVisible();
 
     await page.setViewportSize({ width: 215, height: 466 });
-    const overflow = await page.evaluate(() =>
-      document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    const overflow = await sidewaysOverflow(page);
     expect(overflow, 'the results screen scrolls sideways at 200% zoom').toBeLessThanOrEqual(1);
 
     // Every fold on it, opened, is also part of the screen.
     for (const fold of await page.locator('#screen-result details').all()) {
       await fold.locator('summary').click();
     }
-    const opened = await page.evaluate(() =>
-      document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    const opened = await sidewaysOverflow(page);
     expect(opened, 'an opened fold scrolls the results screen sideways').toBeLessThanOrEqual(1);
   });
 });

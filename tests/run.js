@@ -272,14 +272,40 @@ await test('the shipped Turnstile site key is a real one, not a test key', () =>
   assert.ok(key.startsWith('0x'), `${key} is a Turnstile test key, not a real site key`);
 });
 
+// _headers is a list of rules, and EVERY rule that matches a request is
+// applied — a more specific path does not replace a broader one. Reading the
+// file as loose text hid that: a line is either a header being set, or a
+// header being detached with a leading `!`, and the two must not be confused.
+function headerRules(path = 'public/_headers') {
+  const rules = [];
+  for (const line of read(path).split('\n')) {
+    if (!line.trim() || line.trim().startsWith('#')) continue;
+    if (!/^\s/.test(line)) { rules.push({ path: line.trim(), sets: [], removes: [] }); continue; }
+    const directive = line.trim();
+    if (!rules.length) continue;
+    if (directive.startsWith('!')) {
+      rules[rules.length - 1].removes.push(directive.slice(1).trim().toLowerCase());
+    } else {
+      const at = directive.indexOf(':');
+      if (at < 0) continue;
+      rules[rules.length - 1].sets.push({
+        name: directive.slice(0, at).trim().toLowerCase(),
+        value: directive.slice(at + 1).trim(),
+      });
+    }
+  }
+  return rules;
+}
+
+const cspOf = (rule) => (rule.sets.find((h) => h.name === 'content-security-policy') || {}).value;
+
 await test('the sign-in page lets Turnstile reach its own servers', () => {
   // script-src and frame-src alone are not enough: the widget makes its own
   // network calls, and connect-src 'self' silently stopped them, so no token
   // was ever produced and every sign-in was refused.
-  const headers = read('public/_headers');
-  const appRule = headers.split('/app.html')[1] || headers.split('/app')[1];
-  const csp = appRule.split('\n').find((line) => line.includes('Content-Security-Policy'));
-  const connect = csp.match(/connect-src ([^;]+)/)[1];
+  const app = headerRules().find((rule) => rule.path === '/app');
+  assert.ok(app, '_headers has no /app rule');
+  const connect = cspOf(app).match(/connect-src ([^;]+)/)[1];
   assert.ok(connect.includes('https://challenges.cloudflare.com'),
     `the sign-in CSP blocks Turnstile's own requests: connect-src ${connect}`);
 });
@@ -458,8 +484,8 @@ await test('the entry module exports only the fetch handler', () => {
 });
 
 await test('every content security policy is strict, and only the sign-in page admits Turnstile', () => {
-  const headers = read('public/_headers');
-  const policies = headers.split('\n').filter((line) => line.includes('Content-Security-Policy'));
+  const rules = headerRules();
+  const policies = rules.map(cspOf).filter(Boolean);
   assert.ok(policies.length >= 1, '_headers must set a CSP');
   for (const csp of policies) {
     assert.ok(csp.includes("default-src 'self'"), 'every CSP must default to self');
@@ -473,8 +499,30 @@ await test('every content security policy is strict, and only the sign-in page a
   }
   // The site-wide policy stays free of any third-party script origin: only the
   // sign-in page may relax it.
-  const global = policies.find((line) => headers.indexOf(line) < headers.indexOf('/app'));
+  const global = cspOf(rules.find((rule) => rule.path === '/*'));
   assert.ok(!/script-src[^;]*https:/.test(global), 'the site-wide CSP must have no external scripts');
+});
+
+// The bug that broke sign-in on the live site. /* sets a strict CSP and /app
+// set a wider one; both matched, so the response carried two policy headers.
+// A browser enforces all of them and keeps the strictest answer per directive,
+// so the strict `script-src 'self'` won and the bot check was refused — while
+// the page looked correctly configured in the file and in every header
+// assertion, because those read the wider line and stopped there.
+await test('no page is served two content security policies', () => {
+  const rules = headerRules();
+  const siteWide = rules.find((rule) => rule.path === '/*');
+  assert.ok(cspOf(siteWide), '/* must set a CSP so a new page is never left without one');
+
+  for (const rule of rules) {
+    if (rule.path === '/*' || !cspOf(rule)) continue;
+    assert.ok(
+      rule.removes.includes('content-security-policy'),
+      `${rule.path} sets its own CSP but never detaches the site-wide one, so a browser `
+      + 'receives both and enforces the stricter of the two. Add "! Content-Security-Policy" '
+      + 'above it.',
+    );
+  }
 });
 
 await test('no page or stylesheet loads an asset from a third party', () => {

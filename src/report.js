@@ -3,6 +3,15 @@
 // RELEASES[0].version === VERSION — bump both together, every release.
 export const RELEASES = [
   {
+    version: '1.2.1',
+    date: '2026-09-01',
+    notes: [
+      'Fixed the sign-in page: the bot check could not load, so the button stayed on \u201cChecking your browser\u2026\u201d and nobody could ask for a code.',
+      'The page was sending two different security policies at once. A browser obeys every one it is given and keeps the strictest answer, so the stricter policy blocked the bot check that the other one allowed.',
+      'The deploy now reads the live sign-in page after every release and fails if it carries more than one policy, or one that would block the check.',
+    ],
+  },
+  {
     version: '1.2.0',
     date: '2026-09-01',
     notes: [
