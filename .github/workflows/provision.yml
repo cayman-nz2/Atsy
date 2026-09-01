@@ -32,11 +32,15 @@ jobs:
       - name: D1 database
         run: |
           set -o pipefail
-          echo "::group::create atsy-db"
+          # One source for the name: wrangler.jsonc, the same file the Worker
+          # binds. Spelled out here as well, it drifted at the first rename.
+          DB_NAME=$(node tools/binding-names.mjs d1-name)
+          export DB_NAME
+          echo "::group::create ${DB_NAME}"
           # --location matters: without it Cloudflare places the database next
           # to whatever machine ran this, which is a US GitHub runner. That is
           # exactly how the original pair ended up in eastern North America.
-          npx wrangler@4 d1 create atsy-db-oc --location oc 2>&1 | tee d1.log || \
+          npx wrangler@4 d1 create "$DB_NAME" --location oc 2>&1 | tee d1.log || \
             echo "already exists, or the token lacks D1 edit"
           echo "::endgroup::"
           npx wrangler@4 d1 list --json 2>/dev/null > d1-list.json || true
@@ -45,7 +49,7 @@ jobs:
             let id = '';
             try {
               const list = JSON.parse(fs.readFileSync('d1-list.json', 'utf8'));
-              const db = list.find((entry) => entry.name === 'atsy-db');
+              const db = list.find((entry) => entry.name === process.env.DB_NAME);
               if (db) id = db.uuid || db.database_id || '';
             } catch {}
             console.log(id);
@@ -59,12 +63,13 @@ jobs:
           # error was never read. A provisioning step that lies about its
           # result is worse than one that fails.
           set -o pipefail
-          if npx wrangler@4 r2 bucket create atsy-cv-oc --location oc 2>&1 | tee r2.log; then
-            echo "atsy-cv-oc is ready"
+          BUCKET=$(node tools/binding-names.mjs r2-bucket)
+          if npx wrangler@4 r2 bucket create "$BUCKET" --location oc 2>&1 | tee r2.log; then
+            echo "${BUCKET} is ready"
           elif grep -q "10042" r2.log; then
             echo "::warning::R2 is not enabled on this account. Enable it once in the Cloudflare dashboard (R2 -> Enable; the 10 GB free tier covers Atsy), then run this workflow again."
           else
-            echo "atsy-cv already exists, or the token lacks R2 edit"
+            echo "${BUCKET} already exists, or the token lacks R2 edit"
           fi
 
       # Turnstile site keys are public; the matching secret must never be. It

@@ -1411,6 +1411,43 @@ await test('one failing stage does not stop the rest of the sweep', async () => 
   assert.equal(report.ephemera.codes, 1, 'a failing R2 delete stopped the database sweep');
 });
 
+// A resource name written out by hand in a workflow is a copy that nothing
+// keeps honest. Renaming the database for the move to Oceania left two such
+// copies behind: locally `d1 migrations apply` pointed at a database that did
+// not exist and silently applied nothing, and the deploy died at the same step
+// with "Couldn't find a D1 DB with the name or binding 'atsy-db'". Both names
+// now come from wrangler.jsonc; this makes a fresh copy fail here, in a gate
+// that runs in seconds, rather than in the deploy that follows a merge.
+await test('no workflow spells out a Cloudflare resource name', () => {
+  const config = JSON.parse(read('wrangler.jsonc').replace(/^\s*\/\/.*$/gm, ''));
+  const live = [config.d1_databases[0].database_name, config.r2_buckets[0].bucket_name];
+  // The pre-cutover names. A workflow may still mention these as history — the
+  // migration workflow names what it copied from — so only the live names are
+  // barred, and only where a command would act on them.
+  const commandish = /(?:d1|r2 bucket|migrations)\s[^\n]*/g;
+
+  for (const file of readdirSync('.github/workflows')) {
+    const text = read(join('.github/workflows', file));
+    for (const line of text.match(commandish) || []) {
+      for (const name of live) {
+        assert.ok(
+          !line.includes(name),
+          `${file} spells out ${name} in "${line.trim()}" — read it from wrangler.jsonc with tools/binding-names.mjs instead`,
+        );
+      }
+    }
+  }
+});
+
+await test('binding-names.mjs reports what the Worker is actually bound to', async () => {
+  const { bindingName } = await import('../tools/binding-names.mjs');
+  const config = JSON.parse(read('wrangler.jsonc').replace(/^\s*\/\/.*$/gm, ''));
+  assert.equal(bindingName('d1-name'), config.d1_databases[0].database_name);
+  assert.equal(bindingName('d1-id'), config.d1_databases[0].database_id);
+  assert.equal(bindingName('r2-bucket'), config.r2_buckets[0].bucket_name);
+  assert.throws(() => bindingName('nonsense'), /unknown binding key/);
+});
+
 await test('the cron trigger that runs the sweep is configured', () => {
   const config = JSON.parse(read('wrangler.jsonc').replace(/^\s*\/\/.*$/gm, ''));
   assert.deepEqual(config.triggers.crons, ['*/30 * * * *']);
