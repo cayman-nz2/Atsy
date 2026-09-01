@@ -69,40 +69,39 @@ jobs:
 
       # A copy nobody counted is a copy nobody has checked. Every table in the
       # source is counted in both databases and the two are compared.
+      #
+      # The comparison lives in tools/compare-d1-counts.mjs rather than in a
+      # `node -e` here. Inlined, it was YAML quoting bash quoting a JS template
+      # literal containing backticks, and it failed with no output whatsoever —
+      # a verification step that can fail silently verifies nothing.
       - name: Every table must have the same number of rows in both
         run: |
           set -o pipefail
-          counts() {
-            npx wrangler@4.118.0 d1 execute "$1" --remote -y --json --command \
-              "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name" \
-              > tables.json
-            node -e "
-              const rows = JSON.parse(require('fs').readFileSync('tables.json','utf8'))[0].results;
-              const q = rows.map((r) => \`SELECT '\${r.name}' AS t, COUNT(*) AS n FROM \\\`\${r.name}\\\`\`).join(' UNION ALL ');
-              require('fs').writeFileSync('count.sql', q + ';');
-            "
-            npx wrangler@4.118.0 d1 execute "$1" --remote -y --json --file count.sql > "$2"
-          }
-          counts "$OLD_DB" old.json
-          counts "$NEW_DB" new.json
 
-          node -e "
-            const read = (f) => Object.fromEntries(
-              JSON.parse(require('fs').readFileSync(f,'utf8'))[0].results.map((r) => [r.t, r.n]));
-            const a = read('old.json'), b = read('new.json');
-            const names = [...new Set([...Object.keys(a), ...Object.keys(b)])].sort();
-            let bad = 0;
-            for (const n of names) {
-              const same = a[n] === b[n];
-              if (!same) bad += 1;
-              console.log(\`\${same ? 'ok  ' : 'DIFF'} \${n.padEnd(20)} old=\${a[n] ?? '-'} new=\${b[n] ?? '-'}\`);
-            }
-            if (bad) {
-              console.log(\`::error::\${bad} table(s) do not match — do not cut over\`);
-              process.exit(1);
-            }
-            console.log('every table matches');
-          "
+          echo "listing the source's tables"
+          npx wrangler@4.118.0 d1 execute "$OLD_DB" --remote -y --json --command \
+            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name" \
+            > tables.json
+
+          echo "building the count query"
+          node tools/build-count-query.mjs tables.json count.sql
+          cat count.sql
+
+          echo "counting both databases"
+          npx wrangler@4.118.0 d1 execute "$OLD_DB" --remote -y --json --file count.sql > old.json
+          npx wrangler@4.118.0 d1 execute "$NEW_DB" --remote -y --json --file count.sql > new.json
+
+          node tools/compare-d1-counts.mjs old.json new.json
+
+      - name: Show what Cloudflare actually returned, when the compare fails
+        if: failure()
+        run: |
+          for f in tables.json count.sql old.json new.json; do
+            echo "::group::$f"
+            head -c 2000 "$f" 2>/dev/null || echo "(not written)"
+            echo
+            echo "::endgroup::"
+          done
 
       - name: Create the destination bucket
         run: |
