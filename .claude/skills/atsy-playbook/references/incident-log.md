@@ -624,3 +624,17 @@ Atsy's own incidents start at #36.
     parser while chasing something else, not by any test. → The block is
     stripped first, unclosed ones included, since truncation at `max_tokens`
     leaves no real output at all.
+
+79. **A check that tested the wrong credential.** The deploy step added in
+    v1.2.3 to find out why rewrites were degrading asked Cloudflare's REST API
+    whether the models exist and answer. It came back `403` on the model list
+    and `401 {"code":10000,"Authentication error"}` on the run — which is a fact
+    about `CLOUDFLARE_API_TOKEN`, not about the Worker. Rewrites go through the
+    **AI binding**, which carries no token; the two are different objects with
+    different permissions, and the step could never have seen the runtime it was
+    written to diagnose. It produced a real-looking error that answered nothing.
+    → `/api/admin/ai` runs the same binding a rewrite uses and returns the error
+    verbatim, admin-only because it spends neurons. The deploy step stays, now
+    saying plainly what it cannot see. When instrumenting a failure, check that
+    the instrument is on the same path as the fault: "it errored, so I have
+    found something" is the easiest false positive there is.

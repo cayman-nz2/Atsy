@@ -28,7 +28,7 @@ import {
   redact, templateRewrite, rewriteBullets, spentToday, today,
   REWRITABLE, DAILY_NEURON_BUDGET, MODEL, FALLBACK_MODEL, firstUsableBullet,
 } from '../src/rewrite.js';
-import { submitFeedback, adminStats, adminFeedback, resolveFeedback } from '../src/admin.js';
+import { submitFeedback, adminStats, adminAiCheck, adminFeedback, resolveFeedback } from '../src/admin.js';
 import { scanReport } from '../src/report-page.js';
 import { RELEASES } from '../src/report.js';
 import {
@@ -2010,6 +2010,37 @@ function fakeAi(reply) {
     },
   };
 }
+
+await test('the AI probe is admin-only, and reports the binding verbatim', async () => {
+  // It spends neurons and it exists to expose an error message, so an ordinary
+  // reader must not be able to reach it — 404, the same as every other admin
+  // path, so its existence is not even confirmed.
+  const failing = {
+    run: async () => { throw new Error('Unauthorized: Workers AI is not enabled on this account'); },
+  };
+  const env = testEnv({ AI: failing, ADMIN_EMAILS: 'boss@example.com' });
+  const reader = testUser(env, 'reader@example.com');
+  const denied = await adminAiCheck(new Request('https://atsy.test/'), env, reader);
+  assert.equal(denied.status, 404);
+
+  const admin = testUser(env, 'boss@example.com');
+  const body = await (await adminAiCheck(new Request('https://atsy.test/'), env, admin)).json();
+  assert.equal(body.ok, false);
+  assert.equal(body.models.length, 2, 'both models must be reported, not just the first');
+  // The whole message survives: "not enabled" and "model not found" need
+  // different fixes and must not both arrive as "unavailable".
+  assert.match(body.models[0].error, /not enabled on this account/);
+  assert.equal(body.models[0].model, MODEL);
+  assert.equal(body.models[1].model, FALLBACK_MODEL);
+});
+
+await test('the AI probe says ok when the binding answers', async () => {
+  const env = testEnv({ AI: { run: async () => ({ response: 'ready' }) }, ADMIN_EMAILS: 'boss@example.com' });
+  const admin = testUser(env, 'boss@example.com');
+  const body = await (await adminAiCheck(new Request('https://atsy.test/'), env, admin)).json();
+  assert.equal(body.ok, true);
+  assert.equal(body.models[0].reply, 'ready');
+});
 
 await test('a model that answers produces a labelled AI suggestion', async () => {
   const ai = fakeAi('Cut depot turnaround by [add number] per cent across 12 sites.');

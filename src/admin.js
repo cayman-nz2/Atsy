@@ -9,6 +9,7 @@
 
 import { json, err, nowSec, validEmail, readJson, escapeHtml } from './util.js';
 import { isAdmin } from './auth.js';
+import { MODEL, FALLBACK_MODEL } from './rewrite.js';
 import { notifyOwner } from './notify.js';
 import { ALL_CHECKS } from './scoring/index.js';
 
@@ -55,6 +56,51 @@ export async function submitFeedback(request, env, ctx, user) {
 
 function adminOnly(env, user) {
   return isAdmin(env, user) ? null : err('not_found', 404);
+}
+
+/**
+ * GET /api/admin/ai — does the AI binding actually answer?
+ *
+ * Rewrites degrade to deterministic guidance and return 200 when the model
+ * cannot be reached, which is the right behaviour and a terrible symptom: the
+ * page says "AI suggestions are unavailable right now" and nothing anywhere
+ * says why. The deploy cannot answer it either — it holds an API token, and
+ * the Worker uses a binding, which is a different thing with different
+ * permissions; asking Cloudflare's REST API tests the token, not this.
+ *
+ * So the probe runs here, through the same binding a rewrite uses, and returns
+ * the error verbatim. Admin-only and 404 to everyone else, because it spends
+ * neurons. Capped at 16 tokens so it stays close to free.
+ */
+export async function adminAiCheck(request, env, user) {
+  const denied = adminOnly(env, user);
+  if (denied) return denied;
+
+  if (!env.AI) return json({ ok: false, stage: 'binding', error: 'no AI binding on this Worker' });
+
+  const results = [];
+  for (const model of [MODEL, FALLBACK_MODEL]) {
+    const started = Date.now();
+    try {
+      const reply = await env.AI.run(model, {
+        messages: [{ role: 'user', content: 'Reply with the single word: ready' }],
+        max_tokens: 16,
+      });
+      const text = (reply && (reply.response || reply.result || '')).toString().trim();
+      results.push({ model, ok: true, ms: Date.now() - started, reply: text.slice(0, 200) });
+    } catch (error) {
+      results.push({
+        model,
+        ok: false,
+        ms: Date.now() - started,
+        // The whole message, not just its first clause: "Model not found" and
+        // "Unauthorized" and "account not entitled" all arrive here and call
+        // for different fixes.
+        error: String((error && error.message) || error).slice(0, 500),
+      });
+    }
+  }
+  return json({ ok: results.some((r) => r.ok), models: results });
 }
 
 /**
