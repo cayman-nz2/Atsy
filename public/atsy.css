@@ -634,7 +634,17 @@ select.input { appearance: none; background-image: none; }
   font-family: var(--mono); font-size: 24px; letter-spacing: .34em;
   max-width: 11rem; text-align: center;
 }
+/* An unused slot leaves no gap in the form. But Turnstile measures the element
+   it renders into, and an element that is display:none measures zero — so the
+   slot must be laid out for the moment it is still empty and about to be
+   filled. Checking the slot's own visibility instead of setting this deadlocked
+   the sign-in page: empty, therefore hidden, therefore never rendered,
+   therefore empty. The width matters as much as the display: the form is
+   align-items:flex-start, so an empty block shrinks to zero and the widget
+   would be handed a box with no room in it. .is-live must stay after :empty;
+   their specificity is equal and the later rule wins. */
 .turnstile-slot:empty { display: none; }
+.turnstile-slot.is-live { display: block; width: 100%; }
 .formerror { color: var(--sev-critical); font-size: 14.5px; }
 .formerror[hidden] { display: none; }
 .fineprint { color: var(--ink-3); font-size: 14px; margin-top: var(--s3); }

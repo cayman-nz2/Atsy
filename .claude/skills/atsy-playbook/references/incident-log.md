@@ -562,3 +562,34 @@ Atsy's own incidents start at #36.
     the check is exact and works offline. A test that reads a *rendering* of
     the thing instead of the thing can be green for years while the product
     is broken.
+
+74. **Two sensible rules that cancelled each other out.** With the CSP fixed,
+    the sign-in button still sat on "Checking your browser…" and no widget
+    appeared. `.turnstile-slot:empty { display: none }` hid the slot so an
+    unused one left no gap in the form; `renderShield` returned early if
+    `slot.offsetParent === null`, because Turnstile cannot measure a hidden
+    element. So: empty → hidden → never rendered → empty. Neither rule is
+    wrong; the pair is fatal, and it had been since the guard landed in
+    `a46817b`, meaning the bot check had never once rendered in production.
+    → The guard now asks whether the *screen* is hidden, which is what it
+    always meant, and the slot is given `display:block; width:100%` before the
+    handover. The width was not incidental: the form is `align-items:
+    flex-start`, so the first fix produced a slot that was laid out and 0px
+    wide — visible to `offsetParent`, useless to a widget. A guard that tests
+    a proxy ("is this element visible") instead of the condition ("is this
+    screen off") will eventually be answered by something that has nothing to
+    do with the question.
+
+75. **A test switched off because the failure looked like the environment.**
+    `playwright.config.js` blanked `TURNSTILE_SITE_KEY`, and said why: with a
+    real key "the page tries to load a widget it cannot reach from a sandbox,
+    and the submit button correctly waits forever for a token — the same
+    lockout that hit the live site". Every clause of that is a description of
+    incident 74, written down, reasoned about, and filed as a sandbox
+    limitation. The one path that could reveal the bug was removed to make the
+    suite green, and the note explaining the removal contained the diagnosis.
+    → The widget path is now tested with a stubbed `api.js` served by
+    `page.route`, which needs no network at all. When a test is disabled
+    because "it cannot work here", the thing to check first is whether it is
+    failing for the reason claimed — and "correctly waits forever" should never
+    have survived being written.

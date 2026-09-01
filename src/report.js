@@ -3,6 +3,16 @@
 // RELEASES[0].version === VERSION — bump both together, every release.
 export const RELEASES = [
   {
+    version: '1.2.2',
+    date: '2026-09-01',
+    notes: [
+      'Fixed the sign-in button staying on \u201cChecking your browser\u2026\u201d. The bot check had nowhere to draw itself, so it never finished, and no code could be requested.',
+      'The box holding the check hides itself while it is empty, to keep the form tidy. The code that fills it refused to draw into anything hidden. Each rule was reasonable and together they cancelled out, so the box stayed empty for good.',
+      'The check now gets a visible box of the right width before it is asked to draw, on the sign-in form and the upload form alike.',
+      'The test suite had switched the bot check off entirely rather than test it, on the belief that it could not work outside the real site. It can, and it is now tested on both forms.',
+    ],
+  },
+  {
     version: '1.2.1',
     date: '2026-09-01',
     notes: [

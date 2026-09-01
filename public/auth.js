@@ -114,9 +114,16 @@
     var slot = document.getElementById(which.slotId);
     if (!slot || !state.siteKey || !window.turnstile) return;
     // Turnstile cannot measure a widget inside a hidden element, so a screen
-    // that is not on yet gets its widget when it is shown.
-    if (slot.offsetParent === null) return;
+    // that is not on yet gets its widget when it is shown. Ask the screen,
+    // not the slot: the slot hides ITSELF while empty, so testing its own
+    // visibility here was always false on a slot that had yet to be filled,
+    // and the widget was never rendered on any screen at all.
+    var screen = slot.closest('.screen');
+    if (screen && screen.hidden) return;
     slot.textContent = '';
+    // Still empty at this instant, so it is still hidden by .turnstile-slot
+    // :empty. Give it a box to be measured in before handing it over.
+    slot.classList.add('is-live');
     which.token = '';
     setShieldState(which, false);
     which.widgetId = window.turnstile.render(slot, {
