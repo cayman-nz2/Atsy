@@ -121,14 +121,23 @@ jobs:
 
       # A Worker whose D1 binding points at a placeholder id fails at runtime,
       # not at deploy time. Refuse to publish instead, and say what to do.
+      #
+      # The database name is read out of wrangler.jsonc here and used by the
+      # migration step below. It was written out by hand there once, and the
+      # rename for the move to Oceania left it pointing at a database that no
+      # longer existed: the deploy failed with "Couldn't find a D1 DB with the
+      # name or binding 'atsy-db'". One source, no second copy to forget.
       - name: Check the database binding is real
         id: db
         run: |
+          name=$(node tools/binding-names.mjs d1-name)
+          echo "name=${name}" >> "$GITHUB_OUTPUT"
           if grep -q 'PLACEHOLDER-RUN-WRANGLER-D1-CREATE-ATSY-DB' wrangler.jsonc; then
             echo "ready=no" >> "$GITHUB_OUTPUT"
-            echo "::warning::wrangler.jsonc still has the placeholder database_id — skipping the deploy. Run 'wrangler d1 create atsy-db' and paste the id into wrangler.jsonc."
+            echo "::warning::wrangler.jsonc still has the placeholder database_id — skipping the deploy. Run 'wrangler d1 create ${name} --location oc' and paste the id into wrangler.jsonc."
           else
             echo "ready=yes" >> "$GITHUB_OUTPUT"
+            echo "migrations will be applied to ${name}"
           fi
 
       - name: Install dependencies
@@ -146,7 +155,7 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           wranglerVersion: "4.118.0"
-          command: d1 migrations apply atsy-db --remote
+          command: d1 migrations apply ${{ steps.db.outputs.name }} --remote
 
       - name: Deploy Worker
         if: steps.creds.outputs.ready == 'yes' && steps.db.outputs.ready == 'yes'
@@ -288,14 +297,8 @@ jobs:
 
           # Both names come from wrangler.jsonc, so this checks whatever the
           # Worker is actually bound to rather than a copy that can go stale.
-          bucket_name=$(node -e "
-            const c = require('fs').readFileSync('wrangler.jsonc','utf8').replace(/^\\s*\\/\\/.*$/gm,'');
-            console.log(JSON.parse(c).r2_buckets[0].bucket_name);
-          ")
-          database_id=$(node -e "
-            const c = require('fs').readFileSync('wrangler.jsonc','utf8').replace(/^\\s*\\/\\/.*$/gm,'');
-            console.log(JSON.parse(c).d1_databases[0].database_id);
-          ")
+          bucket_name=$(node tools/binding-names.mjs r2-bucket)
+          database_id=$(node tools/binding-names.mjs d1-id)
 
           bucket=$(read_region "r2/buckets/${bucket_name}")
           database=$(read_region "d1/database/${database_id}")
