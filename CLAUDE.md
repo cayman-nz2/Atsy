@@ -20,7 +20,7 @@ checklist, and the incident log inherited from Pricey. Brand is "Atsy" — never
 - Workers AI (binding `AI`) for `toMarkdown` and for bullet rewrites —
   **never** in the scoring path. Scoring is deterministic and node-testable.
 - Email OTP via Cloudflare Email Service (`send_email` binding, sender
-  `hello@vibecod3.app`); Turnstile shields OTP requests and uploads.
+  `atsyhello@vibecod3.app`); Turnstile shields OTP requests and uploads.
 - PDF parsing with `unpdf` (serverless PDF.js) server-side; a self-hosted
   PDF.js build renders the X-ray client-side (Workers have no canvas).
 - `VERSION` single source: `src/version.js`. Do **not** re-export it from
@@ -35,6 +35,11 @@ checklist, and the incident log inherited from Pricey. Brand is "Atsy" — never
   mismatch. Never rename the `atsy-cv:` HKDF info string in `src/crypto.js` to
   follow a bucket rename — it is a key-derivation constant, and changing it makes
   every stored object undecryptable.
+- **No workflow spells out a resource name.** `wrangler.jsonc` is the one source;
+  read it with `node tools/binding-names.mjs <d1-name|d1-id|r2-bucket>`. A unit
+  test fails on any `d1`/`r2 bucket`/`migrations` command that writes a live name
+  out by hand — the rename to Oceania left two such copies behind and killed a
+  deploy at `Apply D1 migrations`.
 - **Extracted CV text is never persisted** — only findings with ≤120-char
   evidence snippets.
 - **Every per-user query binds `user_id`**; every state change is a conditional
