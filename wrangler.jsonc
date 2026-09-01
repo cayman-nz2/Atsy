@@ -16,16 +16,22 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "atsy-db",
+      "database_name": "atsy-db-oc",
       // Local `wrangler dev` ignores this id and uses a local SQLite file, so
-      // development and E2E work without it. Created 2026-08-31 by the
-      // provision workflow.
-      "database_id": "53cd59e3-1822-4b78-b2d6-cabbadeaba8d"
+      // development and E2E work without it.
+      //
+      // Created 2026-09-01 with `--location oc`; D1 serves it from Auckland.
+      // The region is fixed at creation, so moving again means a new database
+      // and another copy — see .github/workflows/migrate-to-oceania.yml.
+      "database_id": "f81e31c5-788f-499e-b52e-6fb5b087cefd"
     }
   ],
   // Holds application-encrypted CV bytes and nothing else: no filename, no
-  // user id, no metadata. Created 2026-08-31 by the provision workflow.
-  "r2_buckets": [{ "binding": "CV", "bucket_name": "atsy-cv" }],
+  // user id, no metadata. Created 2026-09-01 with `--location oc`.
+  //
+  // The old atsy-cv bucket in ENAM is left in place and drains itself: every
+  // object in it is deleted within 24 hours of its upload.
+  "r2_buckets": [{ "binding": "CV", "bucket_name": "atsy-cv-oc" }],
   // Sends the sign-in codes. vibecod3.app is already onboarded as a sending
   // domain, so this needs no secret.
   "send_email": [{ "name": "SEND_EMAIL" }],

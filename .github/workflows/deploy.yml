@@ -259,8 +259,14 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           set -o pipefail
-          claimed=$(grep -o 'ENAM' public/privacy.html | head -1)
-          if [ -z "$claimed" ]; then
+          # The page says "Oceania" in prose; Cloudflare's API says "OC". Map
+          # the one the reader sees onto the one the API returns, so the page
+          # never has to carry a region code just to satisfy this check.
+          if grep -q 'Oceania' public/privacy.html; then
+            claimed=OC
+          elif grep -q 'eastern North America' public/privacy.html; then
+            claimed=ENAM
+          else
             echo "::error::/privacy no longer names a storage region — it must say where the data is"
             exit 1
           fi
@@ -280,8 +286,19 @@ jobs:
               "
           }
 
-          bucket=$(read_region "r2/buckets/atsy-cv")
-          database=$(read_region "d1/database/53cd59e3-1822-4b78-b2d6-cabbadeaba8d")
+          # Both names come from wrangler.jsonc, so this checks whatever the
+          # Worker is actually bound to rather than a copy that can go stale.
+          bucket_name=$(node -e "
+            const c = require('fs').readFileSync('wrangler.jsonc','utf8').replace(/^\\s*\\/\\/.*$/gm,'');
+            console.log(JSON.parse(c).r2_buckets[0].bucket_name);
+          ")
+          database_id=$(node -e "
+            const c = require('fs').readFileSync('wrangler.jsonc','utf8').replace(/^\\s*\\/\\/.*$/gm,'');
+            console.log(JSON.parse(c).d1_databases[0].database_id);
+          ")
+
+          bucket=$(read_region "r2/buckets/${bucket_name}")
+          database=$(read_region "d1/database/${database_id}")
 
           # An unreachable API leaves both empty, and two empty strings must not
           # read as agreement — that is how a check proves nothing.

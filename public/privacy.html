@@ -104,19 +104,24 @@
         analytics platform — the list below is the whole of it.</p>
       <ul class="tightlist">
         <li><strong>Your account row, your scan records and their findings</strong> are in a
-          Cloudflare D1 database called <code>atsy-db</code>.</li>
+          Cloudflare D1 database called <code>atsy-db-oc</code>.</li>
         <li><strong>Your encrypted CV</strong> is in a Cloudflare R2 bucket called
-          <code>atsy-cv</code>, stored under a random id with no filename and no user id attached
-          to the object.</li>
-        <li>Both sit in Cloudflare's <strong>ENAM region — eastern North America</strong>.
-          Cloudflare does not publish which building. Read replication is switched off, so there
-          is no second copy of the database in another region.</li>
-        <li>Neither is pinned to a UK or EU jurisdiction. <strong>If you are in the UK or the EU,
-          your data is transferred to North America to be stored</strong> — a transfer under the
-          GDPR, and worth knowing before you upload.</li>
+          <code>atsy-cv-oc</code>, stored under a random id with no filename and no user id
+          attached to the object.</li>
+        <li>Both sit in Cloudflare's <strong>Oceania region</strong>, and D1 reports serving the
+          database from <strong>Auckland</strong>. Read replication is switched off, so there is
+          no second copy of the database anywhere else.</li>
+        <li><strong>Being honest about what that guarantees.</strong> Cloudflare lets us ask for a
+          region, and it is honouring that ask &mdash; but a region is a placement request, not a
+          contractual boundary. The only hard boundaries Cloudflare sells are the EU and a US
+          government one; there is no New Zealand or Australian equivalent to buy. So: your data
+          is in Oceania, and Atsy cannot promise it can never be moved.</li>
+        <li>If you are in the <strong>UK or the EU</strong>, your data is still transferred out of
+          the UK or EU to be stored &mdash; to Oceania rather than to North America, but a transfer
+          under the GDPR either way, and worth knowing before you upload.</li>
         <li>The code itself runs at Cloudflare's edge, in whichever data centre is nearest you. Your
           upload travels from you to that edge and is <strong>encrypted there, inside the
-          application</strong>, before it is written to storage in ENAM.</li>
+          application</strong>, before it is written to storage in Oceania.</li>
         <li>Sign-in codes are sent through <strong>Cloudflare Email Service</strong>. Once the
           message leaves, it is with your own mail provider, which Atsy does not control.</li>
         <li>If you ask for an AI rewrite, the redacted bullet goes to <strong>Cloudflare Workers
@@ -127,7 +132,9 @@
       </ul>
       <p class="fineprint">These two regions are read back from Cloudflare on every deploy and
         checked against this page. If either ever moved and this paragraph were not updated, the
-        deploy would fail rather than leave you reading something untrue.</p>
+        deploy would fail rather than leave you reading something untrue. Atsy previously stored
+        both in eastern North America &mdash; not by choice, but because the script that created
+        them never said where, so they were placed next to the machine that ran it.</p>
     </div>
 
     <div class="card">
@@ -147,7 +154,7 @@
     <div class="card">
       <h2 class="cardtitle">Your rights, and how to use them</h2>
       <p>Atsy is run from New Zealand under the Privacy Act 2020, and follows the GDPR standard for
-        anyone in the UK or EU — including for the transfer to North America described above. You
+        anyone in the UK or EU — including for the transfer out of the UK or EU described above. You
         can see everything held about you (the app is that view), correct it by signing in again
         with the right address, take it with you by downloading your report, and erase it in one
         click from your account screen. Erasure is immediate and irreversible.</p>
@@ -159,7 +166,7 @@
 
 <footer class="foot">
   <div class="wrap">
-    <span>Atsy &middot; free CV scanner &middot; <span id="version">v1.1.1</span></span>
+    <span>Atsy &middot; free CV scanner &middot; <span id="version">v1.2.0</span></span>
     <nav class="footnav" aria-label="More from Atsy">
       <a href="/">Home</a>
       <a href="/about">How it works</a>

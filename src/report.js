@@ -3,6 +3,16 @@
 // RELEASES[0].version === VERSION — bump both together, every release.
 export const RELEASES = [
   {
+    version: '1.2.0',
+    date: '2026-09-01',
+    notes: [
+      'Your CV and your account now live in Cloudflare\u2019s Oceania region \u2014 D1 serves the database from Auckland \u2014 instead of eastern North America.',
+      'They were in the United States because the script that created them never said where, so Cloudflare placed them beside the machine that ran it. Nobody chose it.',
+      'Neither store can be moved, so both were created fresh in Oceania and the data copied across, with every table\u2019s row count checked against the original before the switch.',
+      'The privacy page says Oceania and Auckland, and says plainly that a region is a placement request rather than a jurisdiction \u2014 Cloudflare sells hard boundaries only for the EU and US government, with no New Zealand equivalent.',
+    ],
+  },
+  {
     version: '1.1.1',
     date: '2026-08-31',
     notes: [
