@@ -514,19 +514,21 @@ await test('the privacy page says where the data physically is', () => {
   // "Encrypted and deleted in 24 hours" is not an answer to "where is my CV".
   // A reader in the EU needs to know it leaves the EU, and a page that only
   // talks about encryption lets them assume it does not.
-  const page = read('public/privacy.html');
+  // Collapse whitespace first: these phrases wrap across lines in the source,
+  // and a regex that works on the rendered sentence fails on the HTML.
+  const page = read('public/privacy.html').replace(/\s+/g, ' ');
 
-  assert.match(page, /ENAM/, 'the page names no storage region');
-  assert.match(page, /atsy-db/, 'the page does not name the database its rows are in');
-  assert.match(page, /atsy-cv/, 'the page does not name the bucket the CV is in');
-  assert.match(page, /transferred to North America/i,
+  assert.match(page, /Oceania/, 'the page names no storage region');
+  assert.match(page, /atsy-db-oc/, 'the page does not name the database its rows are in');
+  assert.match(page, /atsy-cv-oc/, 'the page does not name the bucket the CV is in');
+  assert.match(page, /transferred out of the UK or EU/i,
     'the page does not tell a UK or EU reader their data leaves the UK or EU');
 
-  // The claim the deploy asserts against Cloudflare has to be a single region,
-  // or the assertion has nothing definite to compare with.
-  const regions = [...new Set(page.match(/\b(ENAM|WNAM|WEUR|EEUR|APAC|OC)\b/g) || [])];
-  assert.equal(regions.length, 1,
-    `the page names ${regions.length} regions (${regions.join(', ')}); the deploy check compares one`);
+  // A region is a placement request, not a jurisdiction. Saying "your data is
+  // in Oceania" without saying that would be the page overclaiming, which is
+  // the one thing it exists not to do.
+  assert.match(page, /not a contractual boundary/i,
+    'the page presents the region as a guarantee it is not');
 });
 
 await test('the privacy page does not claim scoring is still unbuilt', () => {

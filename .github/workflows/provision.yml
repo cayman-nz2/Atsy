@@ -33,7 +33,10 @@ jobs:
         run: |
           set -o pipefail
           echo "::group::create atsy-db"
-          npx wrangler@4 d1 create atsy-db 2>&1 | tee d1.log || \
+          # --location matters: without it Cloudflare places the database next
+          # to whatever machine ran this, which is a US GitHub runner. That is
+          # exactly how the original pair ended up in eastern North America.
+          npx wrangler@4 d1 create atsy-db-oc --location oc 2>&1 | tee d1.log || \
             echo "already exists, or the token lacks D1 edit"
           echo "::endgroup::"
           npx wrangler@4 d1 list --json 2>/dev/null > d1-list.json || true
@@ -56,8 +59,8 @@ jobs:
           # error was never read. A provisioning step that lies about its
           # result is worse than one that fails.
           set -o pipefail
-          if npx wrangler@4 r2 bucket create atsy-cv 2>&1 | tee r2.log; then
-            echo "atsy-cv is ready"
+          if npx wrangler@4 r2 bucket create atsy-cv-oc --location oc 2>&1 | tee r2.log; then
+            echo "atsy-cv-oc is ready"
           elif grep -q "10042" r2.log; then
             echo "::warning::R2 is not enabled on this account. Enable it once in the Cloudflare dashboard (R2 -> Enable; the 10 GB free tier covers Atsy), then run this workflow again."
           else

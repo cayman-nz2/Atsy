@@ -13,8 +13,9 @@ Workers Paid plan (cost model in §7). Platform facts are cited in
 | --- | --- | --- |
 | Compute | Cloudflare Worker (`worker.js` + `src/*.js`, ES modules) | Same stack as Pricey; no cold-start cost; 30 s CPU default is ample |
 | Static assets | `dist/` built by copying `public/` | Served ahead of Worker routes; unmatched paths fall through to the Worker |
-| Database | D1 `atsy-db`, migrations in `migrations/`, applied by CI | 25 B rows read / 50 M written per month included |
-| File storage | R2 `atsy-cv`, private bucket, app-encrypted objects | 10 GB-month free, zero egress, AES-256 at rest under our own ciphertext |
+| Database | D1 `atsy-db-oc`, migrations in `migrations/`, applied by CI | 25 B rows read / 50 M written per month included |
+| File storage | R2 `atsy-cv-oc`, private bucket, app-encrypted objects | 10 GB-month free, zero egress, AES-256 at rest under our own ciphertext |
+| Storage region | Both created with `--location oc`; D1 serves from Auckland | Fixed at creation and unchangeable — a move means new resources and a copy |
 | PDF parsing | `unpdf` (serverless PDF.js build, tested on Workers) | Positional text items — the only way to detect columns, headers and reading order |
 | Semantic cross-check | `env.AI.toMarkdown()` | Free for PDFs; gives a tagged-structure view to corroborate section detection |
 | Auth | Email OTP via Cloudflare Email Service (`send_email` binding) | Owner directive; 3,000 emails/month included; `vibecod3.app` already onboarded |
@@ -144,6 +145,22 @@ either returns a clear "this file is too complex to scan — is it really a CV?"
 message rather than a timeout. Total target: **p50 ≤ 2 s, p95 ≤ 6 s** of Worker
 time; the request never approaches the 30 s CPU ceiling.
 
+**Where the data lives.** Both stores were created with `--location oc` and sit
+in Cloudflare's Oceania region; D1 reports `served_by_colo: AKL`, Auckland. The
+region is fixed when a resource is created and cannot be changed afterwards —
+there is no move command — so relocating means creating new resources and
+copying, which is what `.github/workflows/migrate-to-oceania.yml` does.
+
+A location is a placement request, not a jurisdiction. Cloudflare sells hard
+boundaries only for the EU and FedRAMP, so `/privacy` says the data is in
+Oceania without claiming it can never leave. `deploy.yml` reads both regions
+from the Cloudflare API on every merge and fails if either stops matching what
+the page claims.
+
+The original pair sat in eastern North America purely because `provision.yml`
+created them with no `--location`, which places a resource next to whatever
+machine ran the command — a US GitHub runner.
+
 **Client-side X-ray:** the results page renders the original PDF with a
 self-hosted PDF.js build (`public/vendor/pdfjs/`) and draws the finding bounding
 boxes over it. The file is fetched once through `GET /api/scans/:id/file`
@@ -204,8 +221,8 @@ no CV content in any log line.
   "routes": [{ "pattern": "atsy.vibecod3.app", "custom_domain": true }],
   "workers_dev": true,
   "assets": { "directory": "./dist", "binding": "ASSETS" },
-  "d1_databases": [{ "binding": "DB", "database_name": "atsy-db", "database_id": "<set at setup>" }],
-  "r2_buckets": [{ "binding": "CV", "bucket_name": "atsy-cv" }],
+  "d1_databases": [{ "binding": "DB", "database_name": "atsy-db-oc", "database_id": "<set at setup>" }],
+  "r2_buckets": [{ "binding": "CV", "bucket_name": "atsy-cv-oc" }],
   "ai": { "binding": "AI" },
   "send_email": [{ "name": "SEND_EMAIL" }],
   "ratelimits": [
@@ -264,7 +281,7 @@ concurrency: deploy-main (never cancel — deploys must land in merge order)
 
 test job:    npm ci → npm run check → npm test → playwright chromium → npm run e2e
 deploy job:  npm ci → npm run build
-             → wrangler d1 migrations apply atsy-db --remote
+             → wrangler d1 migrations apply atsy-db-oc --remote
              → wrangler deploy (wranglerVersion 4.118.0 — 3.x cannot parse assets configs)
              → sync TURNSTILE_SECRET_KEY / CV_MASTER_KEY / IP_HASH_SALT as Worker secrets
              → verify /api/health version == src/version.js, polling up to 60 s

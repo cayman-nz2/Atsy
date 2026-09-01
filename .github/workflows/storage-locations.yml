@@ -30,17 +30,27 @@ jobs:
         with:
           node-version: 22
 
+      - name: Read the bound resources out of wrangler.jsonc
+        run: |
+          node -e "
+            const c = require('fs').readFileSync('wrangler.jsonc','utf8').replace(/^\\s*\\/\\/.*$/gm,'');
+            const j = JSON.parse(c);
+            console.log('DB_ID=' + j.d1_databases[0].database_id);
+            console.log('DB_NAME=' + j.d1_databases[0].database_name);
+            console.log('BUCKET=' + j.r2_buckets[0].bucket_name);
+          " >> "$GITHUB_ENV"
+
       - name: R2 bucket — where the encrypted CV bytes sit
         run: |
-          echo "::group::wrangler r2 bucket info atsy-cv"
-          npx wrangler@4.118.0 r2 bucket info atsy-cv || \
+          echo "::group::wrangler r2 bucket info "$BUCKET""
+          npx wrangler@4.118.0 r2 bucket info "$BUCKET" || \
             echo "::warning::could not read the bucket's location"
           echo "::endgroup::"
 
       - name: D1 database — where the account rows and findings sit
         run: |
-          echo "::group::wrangler d1 info atsy-db"
-          npx wrangler@4.118.0 d1 info atsy-db || \
+          echo "::group::wrangler d1 info "$DB_NAME""
+          npx wrangler@4.118.0 d1 info "$DB_NAME" || \
             echo "::warning::could not read the database's region"
           echo "::endgroup::"
 
@@ -51,8 +61,8 @@ jobs:
         run: |
           set -o pipefail
           for path in \
-            "r2/buckets/atsy-cv" \
-            "d1/database/53cd59e3-1822-4b78-b2d6-cabbadeaba8d"; do
+            "r2/buckets/${BUCKET}" \
+            "d1/database/${DB_ID}"; do
             echo "::group::GET /accounts/*/${path}"
             curl -sS -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
               "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/${path}" \

@@ -13,8 +13,10 @@ checklist, and the incident log inherited from Pricey. Brand is "Atsy" — never
 ## Stack
 - Single Cloudflare Worker (`worker.js` + `src/*.js`) plus static assets in
   `dist/` (built by copying `public/`). ES modules, no framework, no bundler.
-- D1 `atsy-db` (binding `DB`, migrations in `migrations/`, applied by CI).
-- R2 `atsy-cv` (binding `CV`) holds **application-encrypted** CV bytes only.
+- D1 `atsy-db-oc` (binding `DB`, migrations in `migrations/`, applied by CI).
+  Cloudflare's Oceania region; D1 serves it from Auckland.
+- R2 `atsy-cv-oc` (binding `CV`) holds **application-encrypted** CV bytes only,
+  also in Oceania.
 - Workers AI (binding `AI`) for `toMarkdown` and for bullet rewrites —
   **never** in the scoring path. Scoring is deterministic and node-testable.
 - Email OTP via Cloudflare Email Service (`send_email` binding, sender
@@ -27,6 +29,12 @@ checklist, and the incident log inherited from Pricey. Brand is "Atsy" — never
 ## Non-negotiables
 - **Scoring never calls a model.** Same PDF → same score, always.
 - **No admin endpoint returns CV content.** Aggregates only, enforced by test.
+- **Storage stays in Oceania.** Region is fixed at creation and cannot be changed,
+  so any new D1 database or R2 bucket must be created with `--location oc`. The
+  deploy asserts the live regions against what `/privacy` claims and fails on a
+  mismatch. Never rename the `atsy-cv:` HKDF info string in `src/crypto.js` to
+  follow a bucket rename — it is a key-derivation constant, and changing it makes
+  every stored object undecryptable.
 - **Extracted CV text is never persisted** — only findings with ≤120-char
   evidence snippets.
 - **Every per-user query binds `user_id`**; every state change is a conditional
