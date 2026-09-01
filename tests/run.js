@@ -26,7 +26,7 @@ import { buildMatcher } from '../src/skills.js';
 import { roleFit, totalTenureYears, seniorityOf } from '../src/scoring/role-fit.js';
 import {
   redact, templateRewrite, rewriteBullets, spentToday, today,
-  REWRITABLE, DAILY_NEURON_BUDGET,
+  REWRITABLE, DAILY_NEURON_BUDGET, MODEL, FALLBACK_MODEL, firstUsableBullet,
 } from '../src/rewrite.js';
 import { submitFeedback, adminStats, adminFeedback, resolveFeedback } from '../src/admin.js';
 import { scanReport } from '../src/report-page.js';
@@ -1991,6 +1991,106 @@ await test('with no AI binding the product still works, degraded and labelled', 
   assert.equal(body.suggestions[0].source, 'template');
   assert.ok(body.suggestions[0].guidance);
   assert.match(body.label, /check it is true/);
+});
+
+// Until now every rewrite test ran with no AI binding at all, so the only path
+// with coverage was the fallback. A model that answers — the thing the feature
+// exists for — was never exercised, which is why a degraded live response could
+// not be told apart from a working one by any gate.
+function fakeAi(reply) {
+  const calls = [];
+  return {
+    calls,
+    AI: {
+      run: async (model, options) => {
+        calls.push({ model, options });
+        if (typeof reply === 'function') return reply(model, options);
+        return { response: reply };
+      },
+    },
+  };
+}
+
+await test('a model that answers produces a labelled AI suggestion', async () => {
+  const ai = fakeAi('Cut depot turnaround by [add number] per cent across 12 sites.');
+  const env = testEnv({ AI: ai.AI });
+  const user = testUser(env);
+  const { scan } = await (await createScan(uploadRequest(fixture('noMetrics')), env, user)).json();
+
+  const body = await (await rewriteBullets(new Request('https://atsy.test/'), env, user, scan.id, {
+    bullets: [{ text: 'Responsible for the depot network', checkId: 'D03' }],
+    identity: { name: 'Priya Raman' },
+  })).json();
+
+  assert.equal(body.degraded, false, `still degraded: ${body.reason}`);
+  assert.equal(body.suggestions[0].source, 'ai');
+  assert.match(body.suggestions[0].suggestion, /depot turnaround/);
+  assert.equal(ai.calls[0].model, MODEL, 'the primary model was not the one called');
+  // The model is asked about the redacted bullet, never the reader's own words.
+  assert.ok(!JSON.stringify(ai.calls[0].options).includes('Priya'));
+});
+
+await test('a model that answers with nothing usable falls back, and says so', async () => {
+  // Both models reply, both replies are preamble. That is a different failure
+  // from the model erroring, and the reader's page said the same thing for both.
+  const ai = fakeAi('Sure! Here are some thoughts:');
+  const env = testEnv({ AI: ai.AI });
+  const user = testUser(env);
+  const { scan } = await (await createScan(uploadRequest(fixture('noMetrics')), env, user)).json();
+
+  const body = await (await rewriteBullets(new Request('https://atsy.test/'), env, user, scan.id, {
+    bullets: [{ text: 'Responsible for the depot network', checkId: 'D03' }],
+  })).json();
+
+  assert.equal(body.degraded, true);
+  assert.equal(body.reason, 'model_reply_unusable');
+  assert.equal(ai.calls.length, 2, 'the fallback model was not tried');
+  assert.equal(ai.calls[1].model, FALLBACK_MODEL);
+});
+
+await test('a model that throws is reported as an error, not as an empty reply', async () => {
+  const ai = fakeAi(() => { throw new Error('No such model @cf/nope'); });
+  const env = testEnv({ AI: ai.AI });
+  const user = testUser(env);
+  const { scan } = await (await createScan(uploadRequest(fixture('noMetrics')), env, user)).json();
+
+  const body = await (await rewriteBullets(new Request('https://atsy.test/'), env, user, scan.id, {
+    bullets: [{ text: 'Responsible for the depot network', checkId: 'D03' }],
+  })).json();
+
+  assert.equal(body.degraded, true);
+  assert.equal(body.reason, 'model_error');
+});
+
+await test('no AI binding is reported as exactly that', async () => {
+  const env = testEnv();
+  const user = testUser(env);
+  const { scan } = await (await createScan(uploadRequest(fixture('noMetrics')), env, user)).json();
+  const body = await (await rewriteBullets(new Request('https://atsy.test/'), env, user, scan.id, {
+    bullets: [{ text: 'Responsible for the depot network', checkId: 'D03' }],
+  })).json();
+  assert.equal(body.reason, 'no_ai_binding');
+});
+
+await test("a reasoning model's working out is never offered as the bullet", () => {
+  // The fallback is a reasoning model, so this is the reply shape it actually
+  // produces. Every line of the thinking is ordinary prose of ordinary length:
+  // long enough, no preamble word, no trailing colon — so the old parser
+  // returned the first one and the reader was shown it as their CV bullet.
+  const thinking = [
+    '<think>',
+    'The bullet has no number in it, so I should put a placeholder somewhere.',
+    'I must not invent a figure here because the instructions forbid it.',
+    '</think>',
+    '',
+    'Ran the depot network across [add number] sites, cutting turnaround by [add number] days.',
+  ].join('\n');
+  assert.match(firstUsableBullet(thinking), /^Ran the depot network/);
+
+  // Truncation at max_tokens leaves the block unclosed. Nothing after it is
+  // real output, so nothing may be offered.
+  const truncated = '<think>\nI should start with a verb and keep it under thirty words.\n';
+  assert.equal(firstUsableBullet(truncated), null);
 });
 
 await test('the daily neuron budget is spent, not guessed at', async () => {

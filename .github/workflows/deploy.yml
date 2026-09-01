@@ -363,3 +363,17 @@ jobs:
             exit 1
           fi
           echo "/app carries one CSP and it admits the bot check"
+
+      # A rewrite whose model is missing returns 200 with deterministic
+      # guidance, by design — the product must work with AI unavailable. The
+      # cost is that a retired or mistyped model id is indistinguishable from a
+      # healthy deploy: every reader quietly gets the fallback and nothing goes
+      # red. This is the only place holding credentials that can tell the
+      # difference. A missing model fails; a model that exists but will not
+      # answer only warns, so a Workers AI outage cannot block an unrelated fix.
+      - name: The rewrite models exist and answer
+        if: steps.creds.outputs.ready == 'yes' && steps.db.outputs.ready == 'yes'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: node tools/check-ai-models.mjs

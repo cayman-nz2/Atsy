@@ -3,6 +3,16 @@
 // RELEASES[0].version === VERSION — bump both together, every release.
 export const RELEASES = [
   {
+    version: '1.2.3',
+    date: '2026-09-01',
+    notes: [
+      'A rewrite suggestion will never show you the model\u2019s own thinking as your bullet. The fallback model narrates before it answers, and that narration could be handed over as the suggestion.',
+      'When AI suggestions are unavailable, Atsy now records which of the four possible reasons it was, instead of one message covering all of them.',
+      'Deploys now check that the models Atsy names still exist and still answer. A model quietly retired by Cloudflare used to look exactly like a healthy release.',
+      'Nothing about this changes your score. Suggestions have never touched scoring and still do not.',
+    ],
+  },
+  {
     version: '1.2.2',
     date: '2026-09-01',
     notes: [
