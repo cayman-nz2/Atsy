@@ -3,6 +3,14 @@
 // RELEASES[0].version === VERSION — bump both together, every release.
 export const RELEASES = [
   {
+    version: '1.2.4',
+    date: '2026-09-01',
+    notes: [
+      'Added a way to find out why AI suggestions are unavailable, for the person who runs Atsy. Nothing about your scan or your score changes.',
+      'The check added yesterday turned out to be asking the wrong thing \u2014 it tested a deploy credential rather than the connection Atsy actually uses to reach the model.',
+    ],
+  },
+  {
     version: '1.2.3',
     date: '2026-09-01',
     notes: [

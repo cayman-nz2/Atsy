@@ -14,7 +14,7 @@ import { runRetention } from './src/retention.js';
 import { matchScan } from './src/match.js';
 import { scanReport } from './src/report-page.js';
 import { rewriteBullets } from './src/rewrite.js';
-import { submitFeedback, adminStats, adminFeedback, resolveFeedback } from './src/admin.js';
+import { submitFeedback, adminStats, adminAiCheck, adminFeedback, resolveFeedback } from './src/admin.js';
 import { currentUserOrNull } from './src/auth.js';
 import { readJson } from './src/util.js';
 
@@ -104,6 +104,9 @@ export default {
       return submitFeedback(request, env, ctx, user);
     }
 
+    if (path === '/api/admin/ai' && method === 'GET') {
+      return withUser(request, env, (user) => adminAiCheck(request, env, user));
+    }
     if (path === '/api/admin/stats' && method === 'GET') {
       return withUser(request, env, (user) => adminStats(request, env, user));
     }

@@ -10,6 +10,12 @@
 // exists but will not answer is reported as a warning: Workers AI having a bad
 // afternoon must not block shipping an unrelated change.
 //
+// What this CANNOT see: the Worker's own AI binding. This holds an API token,
+// the Worker holds a binding, and they carry different permissions — the first
+// run of this step returned 401 for the token while saying nothing at all about
+// the runtime. /api/admin/ai asks the binding directly and is the authority on
+// whether rewrites work.
+//
 // Run: node tools/check-ai-models.mjs
 // Needs CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID.
 
@@ -50,7 +56,12 @@ async function readJson(url, init) {
 async function catalogue() {
   const { status, body } = await readJson(`${api}/ai/models/search?per_page=1000`, { headers: auth });
   if (!body || body.success !== true) {
-    warn(`could not list Workers AI models (HTTP ${status}) — not treating that as a missing model`);
+    warn(`could not list Workers AI models (HTTP ${status}) — not treating that as a missing model.`
+      + (status === 403 || status === 401
+        ? ' CLOUDFLARE_API_TOKEN has no Workers AI permission, so this check cannot run.'
+          + ' Add "Workers AI: Read" to the token, or use /api/admin/ai while signed in as an'
+          + ' admin, which asks the binding the Worker itself uses.'
+        : ''));
     return null;
   }
   return new Set((body.result || []).map((model) => model.name));
@@ -92,6 +103,12 @@ if (probe.body && probe.body.success === true) {
   console.log(`${MODEL} answered: ${JSON.stringify(reply).slice(0, 200)}`);
 } else {
   const errors = probe.body && probe.body.errors;
+  const authProblem = probe.status === 401 || probe.status === 403;
   warn(`${MODEL} did not answer (HTTP ${probe.status}): `
-    + `${JSON.stringify(errors || probe.text || probe.body).slice(0, 400)}`);
+    + `${JSON.stringify(errors || probe.text || probe.body).slice(0, 400)}`
+    + (authProblem
+      ? '. This is about the deploy token, NOT about the Worker: rewrites run through the AI'
+        + ' binding, which needs no token. It says nothing either way about whether the live'
+        + ' model works — check /api/admin/ai for that.'
+      : ''));
 }
