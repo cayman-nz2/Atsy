@@ -506,3 +506,29 @@ Atsy's own incidents start at #36.
     checks that already happened to emit a box. → Counting it took one script
     and thirty seconds. A scope decision resting on a number nobody has
     measured is a guess with a milestone attached to it.
+
+70. **A renamed database that only CI could see.** Moving storage to Oceania
+    renamed the D1 database to `atsy-db-oc`. `package.json` and `deploy.yml`
+    each held the old name written out by hand. Locally
+    `wrangler d1 migrations apply atsy-db --local` created an empty database
+    under that name and reported success, so every E2E test ran against a
+    schema that was not there; in CI the same command with `--remote` had
+    nothing to create against and failed the deploy outright at *Apply D1
+    migrations*, skipping every step after it. **v1.2.0 merged and never
+    deployed** — the site kept serving the previous build while the repo,
+    the release notes and a green merge all said otherwise. → All three names
+    (D1 name, D1 id, R2 bucket) now come from `wrangler.jsonc` through
+    `tools/binding-names.mjs`, and a unit test fails on any workflow that
+    writes a live name into a `d1`/`r2 bucket`/`migrations` command.
+    Two lessons, and the second is the expensive one: a config value copied
+    into a second file is a value that will be renamed in one place only —
+    and *merged* is not *deployed*. Read the deploy log after every merge,
+    including the ones that look boring.
+
+71. **Running the gate that catches the class of bug you just wrote.** The
+    rename above went out having passed `npm run check` and `npm test`. Both
+    are silent on it by construction: neither one starts wrangler. `npm run
+    e2e` is the only gate that touches a binding, and it was the one skipped
+    because the change "was only configuration". → Configuration changes are
+    exactly the ones the cheap gates cannot see. Pick the gate by what the
+    change can break, not by how large the diff looks.
