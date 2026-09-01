@@ -593,3 +593,34 @@ Atsy's own incidents start at #36.
     because "it cannot work here", the thing to check first is whether it is
     failing for the reason claimed — and "correctly waits forever" should never
     have survived being written.
+
+76. **The only tested path was the broken one.** A reader's report showed "AI
+    suggestions are unavailable right now" on a live scan. Every rewrite test
+    ran on `testEnv()`, which has **no AI binding at all**, so the fallback was
+    the only path with coverage and a model that answers — the entire point of
+    the feature — had never been exercised by any gate. Same shape as incident
+    75: the path that could fail is the path not tested, and the suite is green
+    either way because the product is designed to degrade politely.
+    → Rewrites are now tested with a stubbed `env.AI.run`: a model that answers,
+    one that replies with nothing usable, and one that throws, each asserted to
+    produce a different reason.
+
+77. **"model_unavailable" named four different faults.** No AI binding, budget
+    spent, the model erroring, and the model replying with something the parser
+    rejected all returned the same string, and the runtime logged only
+    `error.message` with no model name — so a degraded response in production
+    could not be attributed to any of them. A fallback that hides which thing
+    failed converts an outage into a mystery. → Four distinct reasons, and the
+    log names the model. The deploy now also asks Cloudflare whether the models
+    exist and runs one, because a retired model id and a healthy release are
+    otherwise identical from outside.
+
+78. **A reasoning model's working out, offered as your CV bullet.** The fallback
+    model is a Qwen3, which emits `<think>` blocks. Every line inside one is
+    ordinary prose of ordinary length — long enough, no preamble word, no
+    trailing colon — so `firstUsableBullet` accepted the first of them. A reader
+    could have been shown "The bullet has no number in it, so I should put a
+    placeholder somewhere." as their suggested rewrite. Found by reading the
+    parser while chasing something else, not by any test. → The block is
+    stripped first, unclosed ones included, since truncation at `max_tokens`
+    leaves no real output at all.

@@ -123,7 +123,15 @@ async function askModel(env, redacted, checkId, model) {
 const PREAMBLE = /^(sure|certainly|of course|here (?:is|are)|okay|ok|absolutely|i'?d be happy|rewritten|revised|suggestion|note)/i;
 
 export function firstUsableBullet(text) {
-  const lines = String(text || '').split('\n').map((line) => line.trim()).filter(Boolean);
+  // Reasoning models (the fallback is one) narrate before they answer, inside
+  // <think> blocks. Those lines are ordinary prose of ordinary length, so every
+  // test below passes them and the reader would be shown the model's working
+  // out as their CV bullet. Drop the block first — including an unclosed one,
+  // which is what a response truncated at max_tokens leaves behind.
+  const thought = String(text || '')
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/<think>[\s\S]*$/i, '');
+  const lines = thought.split('\n').map((line) => line.trim()).filter(Boolean);
   for (const line of lines) {
     const cleaned = line
       .replace(/^["'“]|["'”]$/g, '')
@@ -148,6 +156,16 @@ export async function spentToday(env, day) {
 }
 
 export const today = () => new Date().toISOString().slice(0, 10);
+
+// Why the suggestions came back deterministic. "model_unavailable" covered
+// four different situations and so identified none of them.
+function degradedReason(useAi, env, failures) {
+  if (!env.AI) return 'no_ai_binding';
+  if (!useAi) return 'daily_budget';
+  if (failures.some((line) => /no usable line/.test(line))) return 'model_reply_unusable';
+  if (failures.length) return 'model_error';
+  return 'daily_budget';
+}
 
 /**
  * POST /api/scans/:id/rewrite
@@ -192,6 +210,7 @@ export async function rewriteBullets(request, env, user, scanId, body) {
   const identity = (body && body.identity) || {};
 
   const suggestions = [];
+  const failures = [];
   let used = 0;
   for (const bullet of bullets) {
     const redacted = redact(bullet.text, identity);
@@ -202,12 +221,20 @@ export async function rewriteBullets(request, env, user, scanId, body) {
       continue;
     }
     let written = null;
-    try {
-      written = await askModel(env, redacted, bullet.checkId, MODEL);
-      if (!written) written = await askModel(env, redacted, bullet.checkId, FALLBACK_MODEL);
-    } catch (error) {
-      console.log('rewrite failed:', error && error.message);
+    // Which model, and whether it threw or answered with nothing usable. The
+    // old line logged neither, so a degraded response in production could not
+    // be told apart from a retired model id, an account without Workers AI, or
+    // a reply that came back and was rejected here.
+    for (const model of [MODEL, FALLBACK_MODEL]) {
+      try {
+        written = await askModel(env, redacted, bullet.checkId, model);
+        if (written) break;
+        failures.push(`${model}: no usable line in the reply`);
+      } catch (error) {
+        failures.push(`${model}: ${(error && error.message) || error}`);
+      }
     }
+    if (!written) console.log('rewrite failed —', failures.slice(-2).join(' | '));
     used += 1;
     suggestions.push(written
       ? { ...base, suggestion: written, guidance: null, source: 'ai' }
@@ -231,7 +258,7 @@ export async function rewriteBullets(request, env, user, scanId, body) {
   return json({
     suggestions,
     degraded,
-    reason: degraded ? (useAi ? 'model_unavailable' : 'daily_budget') : null,
+    reason: degraded ? degradedReason(useAi, env, failures) : null,
     note: degraded
       ? 'AI suggestions are unavailable right now, so this is the deterministic guidance instead. Nothing else about your scan changes.'
       : null,
