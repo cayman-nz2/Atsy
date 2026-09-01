@@ -7,6 +7,11 @@
 // token — yields ciphertext and nothing else.
 //
 //   key    = HKDF-SHA256(CV_MASTER_KEY, salt, info = "atsy-cv:" + scanId)
+//
+// That "atsy-cv:" is a fixed domain separator, NOT the name of the R2 bucket.
+// They were the same string once and no longer are. Changing it to follow a
+// renamed bucket would silently make every object already in storage
+// undecryptable, because the key is derived from it.
 //   object = [ version | generation | salt(16) | iv(12) | AES-256-GCM(body) ]
 //
 // The per-file salt means two identical CVs produce unrelated ciphertext, and
