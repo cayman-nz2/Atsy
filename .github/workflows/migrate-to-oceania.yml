@@ -1,0 +1,154 @@
+# Copy Atsy's storage into Cloudflare's Oceania region.
+#
+# The data sits in eastern North America because nobody chose otherwise:
+# provision.yml called `d1 create` and `r2 bucket create` with no --location,
+# so Cloudflare placed both wherever the creating client was — a GitHub runner
+# in the United States. Atsy is run from New Zealand, for readers who are
+# mostly in New Zealand, and every D1 query currently crosses the Pacific.
+#
+# Neither product can be relocated: there is no move command, and the location
+# is fixed when the resource is created. So this creates new ones alongside the
+# old ones and copies the data across. It does NOT cut over — wrangler.jsonc
+# still points at the old resources until a pull request changes it, which is
+# what makes this safe to run and safe to re-run.
+#
+# It never deletes atsy-db or atsy-cv. Rollback is reverting one commit.
+name: Migrate storage to Oceania
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type MIGRATE to copy production data into the new region'
+        required: true
+        default: ''
+
+env:
+  OLD_DB: atsy-db
+  NEW_DB: atsy-db-oc
+  OLD_BUCKET: atsy-cv
+  NEW_BUCKET: atsy-cv-oc
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Refuse to run without an explicit confirmation
+        run: |
+          if [ "${{ inputs.confirm }}" != "MIGRATE" ]; then
+            echo "::error::this copies live user data between regions — re-run it with MIGRATE typed in the box"
+            exit 1
+          fi
+
+      # Re-runnable on purpose: the copy is only useful if it is recent, so a
+      # second run has to be able to replace the first. Dropping the *new*
+      # database is safe; it is not serving anything until the cutover.
+      - name: Start the destination database from empty
+        run: |
+          npx wrangler@4.118.0 d1 delete "$NEW_DB" -y 2>&1 \
+            || echo "nothing to drop — first run"
+          npx wrangler@4.118.0 d1 create "$NEW_DB" --location oc
+
+      - name: Export the live database
+        run: |
+          set -o pipefail
+          npx wrangler@4.118.0 d1 export "$OLD_DB" --remote -y --output dump.sql
+          echo "dump is $(wc -c < dump.sql) bytes, $(grep -c 'INSERT INTO' dump.sql || true) INSERT statements"
+
+      - name: Import it into Oceania
+        run: npx wrangler@4.118.0 d1 execute "$NEW_DB" --remote -y --file dump.sql
+
+      # A copy nobody counted is a copy nobody has checked. Every table in the
+      # source is counted in both databases and the two are compared.
+      - name: Every table must have the same number of rows in both
+        run: |
+          set -o pipefail
+          counts() {
+            npx wrangler@4.118.0 d1 execute "$1" --remote -y --json --command \
+              "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name" \
+              > tables.json
+            node -e "
+              const rows = JSON.parse(require('fs').readFileSync('tables.json','utf8'))[0].results;
+              const q = rows.map((r) => \`SELECT '\${r.name}' AS t, COUNT(*) AS n FROM \\\`\${r.name}\\\`\`).join(' UNION ALL ');
+              require('fs').writeFileSync('count.sql', q + ';');
+            "
+            npx wrangler@4.118.0 d1 execute "$1" --remote -y --json --file count.sql > "$2"
+          }
+          counts "$OLD_DB" old.json
+          counts "$NEW_DB" new.json
+
+          node -e "
+            const read = (f) => Object.fromEntries(
+              JSON.parse(require('fs').readFileSync(f,'utf8'))[0].results.map((r) => [r.t, r.n]));
+            const a = read('old.json'), b = read('new.json');
+            const names = [...new Set([...Object.keys(a), ...Object.keys(b)])].sort();
+            let bad = 0;
+            for (const n of names) {
+              const same = a[n] === b[n];
+              if (!same) bad += 1;
+              console.log(\`\${same ? 'ok  ' : 'DIFF'} \${n.padEnd(20)} old=\${a[n] ?? '-'} new=\${b[n] ?? '-'}\`);
+            }
+            if (bad) {
+              console.log(\`::error::\${bad} table(s) do not match — do not cut over\`);
+              process.exit(1);
+            }
+            console.log('every table matches');
+          "
+
+      - name: Create the destination bucket
+        run: |
+          # Nothing is copied. R2 holds only encrypted CVs and every one is
+          # deleted within 24 hours, so the old bucket drains itself.
+          npx wrangler@4.118.0 r2 bucket create "$NEW_BUCKET" --location oc 2>&1 \
+            || echo "already exists — fine"
+
+      - name: Prove both new resources really are in Oceania
+        run: |
+          set -o pipefail
+          show() {
+            curl -sS -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+              "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/$1" \
+              | node -e "
+                let raw='';
+                process.stdin.on('data',(c)=>raw+=c);
+                process.stdin.on('end',()=>{
+                  const r = (JSON.parse(raw).result)||{};
+                  console.log(JSON.stringify({
+                    name: r.name, uuid: r.uuid,
+                    region: r.location || r.running_in_region,
+                    jurisdiction: r.jurisdiction ?? null,
+                  }, null, 2));
+                });
+              "
+          }
+          echo "::group::the new bucket"
+          show "r2/buckets/${NEW_BUCKET}"
+          echo "::endgroup::"
+
+          echo "::group::the new database — copy this uuid into wrangler.jsonc"
+          npx wrangler@4.118.0 d1 list --json \
+            | node -e "
+              let raw='';
+              process.stdin.on('data',(c)=>raw+=c);
+              process.stdin.on('end',()=>{
+                const db = JSON.parse(raw).find((d)=>d.name===process.env.NEW_DB) || {};
+                console.log(JSON.stringify(db, null, 2));
+              });
+            "
+          echo "::endgroup::"
+
+      - name: What happens next
+        run: |
+          echo "Copy is done and verified. wrangler.jsonc still points at the OLD resources."
+          echo "Cut over in a pull request: new database_id, new bucket_name, and the"
+          echo "region on /privacy. Re-run this workflow immediately before merging so"
+          echo "the gap between the export and the cutover stays small."
