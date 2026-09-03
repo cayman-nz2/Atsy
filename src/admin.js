@@ -9,7 +9,7 @@
 
 import { json, err, nowSec, validEmail, readJson, escapeHtml } from './util.js';
 import { isAdmin } from './auth.js';
-import { MODEL, FALLBACK_MODEL } from './rewrite.js';
+import { MODEL, FALLBACK_MODEL, extractText } from './rewrite.js';
 import { notifyOwner } from './notify.js';
 import { ALL_CHECKS } from './scoring/index.js';
 
@@ -79,29 +79,43 @@ export async function adminAiCheck(request, env, user) {
   if (!env.AI) return json({ ok: false, stage: 'binding', error: 'no AI binding on this Worker' });
 
   const results = [];
+  // Two caps, because the first run of this probe came back ok with an empty
+  // reply from both models: they answer, and nothing could be read out of the
+  // answer. A small cap and a realistic one tell apart "the shape is not the
+  // one we parse" from "the whole allowance went on reasoning before any
+  // answer was emitted". The raw reply is included for the same reason — an
+  // extracted empty string says nothing about why it is empty.
   for (const model of [MODEL, FALLBACK_MODEL]) {
-    const started = Date.now();
-    try {
-      const reply = await env.AI.run(model, {
-        messages: [{ role: 'user', content: 'Reply with the single word: ready' }],
-        max_tokens: 16,
-      });
-      const text = (reply && (reply.response || reply.result || '')).toString().trim();
-      results.push({ model, ok: true, ms: Date.now() - started, reply: text.slice(0, 200) });
-    } catch (error) {
-      results.push({
-        model,
-        ok: false,
-        ms: Date.now() - started,
-        // The whole message, not just its first clause: "Model not found" and
-        // "Unauthorized" and "account not entitled" all arrive here and call
-        // for different fixes.
-        error: String((error && error.message) || error).slice(0, 500),
-      });
+    for (const maxTokens of [16, 600]) {
+      const started = Date.now();
+      try {
+        const reply = await env.AI.run(model, {
+          messages: [{ role: 'user', content: 'Reply with the single word: ready' }],
+          max_tokens: maxTokens,
+        });
+        results.push({
+          model,
+          maxTokens,
+          ok: true,
+          ms: Date.now() - started,
+          extracted: extractText(reply).slice(0, 300),
+          keys: reply && typeof reply === 'object' ? Object.keys(reply) : typeof reply,
+          raw: JSON.stringify(reply).slice(0, 600),
+        });
+      } catch (error) {
+        results.push({
+          model,
+          maxTokens,
+          ok: false,
+          ms: Date.now() - started,
+          error: String((error && error.message) || error).slice(0, 500),
+        });
+      }
     }
   }
-  return json({ ok: results.some((r) => r.ok), models: results });
+  return json({ ok: results.some((r) => r.ok && r.extracted), models: results });
 }
+
 
 /**
  * GET /api/admin/stats — aggregates only.

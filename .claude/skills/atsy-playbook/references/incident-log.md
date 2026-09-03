@@ -638,3 +638,32 @@ Atsy's own incidents start at #36.
     saying plainly what it cannot see. When instrumenting a failure, check that
     the instrument is on the same path as the fault: "it errored, so I have
     found something" is the easiest false positive there is.
+
+80. **The models were never down; the reply was never read.** `/api/admin/ai`
+    came back `ok:true` for both models — 1280ms and 533ms, real work — with an
+    empty reply from each. The extractor was
+    `(reply.response || reply.result || '').toString()`, one shape and one
+    fallback, and neither model fills either. So every rewrite in production
+    fell back to the template while Workers AI was working perfectly, and the
+    page said "AI suggestions are unavailable right now", which was false in
+    every particular. → `extractText` walks the shapes that exist (`response`,
+    nested `result`, OpenAI `choices[].message.content`, Responses-style
+    `output[].content[].text`, bare strings and arrays) and returns '' rather
+    than inventing one. An extractor that knows exactly one shape does not fail
+    loudly when it meets another; it returns empty, and empty is
+    indistinguishable from the model being down.
+
+81. **A probe whose "ok" meant the wrong thing.** That same first result read
+    `ok:true` while the feature was completely broken, because ok was
+    `results.some(r => r.ok)` — the call returned, not the answer was usable.
+    A green diagnostic on a broken feature is worse than no diagnostic. → ok now
+    requires text to have come out, and the probe returns the raw reply and its
+    keys beside the extracted string: an empty extraction says nothing about
+    why it is empty, and that is the question.
+
+82. **Reasoning models need room before they answer.** `max_tokens: 120` has to
+    cover the thinking as well as the bullet on both configured models, so a
+    reply could be spent entirely on reasoning and arrive with no suggestion in
+    it. Raised to 600, with `NEURONS_PER_REWRITE` raised from 12 to 40 to match
+    — a reserve that no longer reflects the call it is reserving for lets the
+    day's real spend run past the budget the guard exists to hold.
