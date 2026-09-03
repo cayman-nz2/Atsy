@@ -322,6 +322,35 @@ test.describe('scanning a CV', () => {
     await expect(box).toContainText('Your line:');
   });
 
+  test('a re-opened scan never sends a name to a model', async ({ page }) => {
+    // SCORING-SPEC §6 rule 1: the model never receives identity. The identity
+    // block is not stored, so a scan re-opened from history has none — and the
+    // page used to fall back to the previous scan's, sending the reader's real
+    // name to the model while redacting somebody else's out of it.
+    await signIn(page, address('scan-identity'));
+    expect(await upload(page, 'noMetrics')).toBe(201);
+
+    const card = page.locator('#fix-list li', { hasText: 'Bullets carry no numbers' });
+    const suggest = card.getByRole('button', { name: 'Suggest a rewrite' });
+
+    // Fresh scan: the browser has the identity, so the model may be asked.
+    const fresh = page.waitForResponse((r) => r.url().includes('/rewrite'));
+    await suggest.click();
+    expect((await (await fresh).json()).reason).not.toBe('identity_unknown');
+
+    // Re-opened from history: it has none, and must not invent one.
+    await page.getByRole('button', { name: 'Back to upload' }).click();
+    await page.getByRole('button', { name: /noMetrics|cv\.pdf/ }).first().click();
+
+    const reopened = page.waitForResponse((r) => r.url().includes('/rewrite'));
+    await card.getByRole('button', { name: 'Suggest a rewrite' }).click();
+    const body = await (await reopened).json();
+    expect(body.reason, 'a re-opened scan asked a model without knowing what to redact')
+      .toBe('identity_unknown');
+    // The reader is told why, and still gets the guidance.
+    await expect(card.locator('.rewritebox').first()).toContainText('Your line:');
+  });
+
   test('feedback reaches the owner and thanks the reader', async ({ page }) => {
     await signIn(page, address('scan-feedback'));
     await page.locator('#feedback-message').fill('The score felt low for a CV I know is good.');

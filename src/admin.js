@@ -9,7 +9,7 @@
 
 import { json, err, nowSec, validEmail, readJson, escapeHtml } from './util.js';
 import { isAdmin } from './auth.js';
-import { MODEL, FALLBACK_MODEL, extractText } from './rewrite.js';
+import { MODEL, FALLBACK_MODEL, extractDetail } from './rewrite.js';
 import { notifyOwner } from './notify.js';
 import { ALL_CHECKS } from './scoring/index.js';
 
@@ -98,7 +98,11 @@ export async function adminAiCheck(request, env, user) {
           maxTokens,
           ok: true,
           ms: Date.now() - started,
-          extracted: extractText(reply).slice(0, 300),
+          extracted: extractDetail(reply).text.slice(0, 300),
+          // 'known' or 'deep'. A reply read only by the shape-agnostic fallback
+          // still works, but the shape should be promoted to a first-class case
+          // rather than left resting on a guess about where the answer lives.
+          via: extractDetail(reply).via,
           keys: reply && typeof reply === 'object' ? Object.keys(reply) : typeof reply,
           raw: JSON.stringify(reply).slice(0, 600),
         });

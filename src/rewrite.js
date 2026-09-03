@@ -112,28 +112,76 @@ const PROMPT = [
  * exactly one shape fails silently the moment a model uses another, and the
  * failure looks identical to the model being down.
  */
+// Keys that hold something other than the answer. A reasoning field is prose
+// of exactly the right shape and length to be mistaken for a bullet, and an id
+// or a model name would be offered to the reader as their rewrite.
+const NOT_THE_ANSWER = new Set([
+  'reasoning', 'reasoning_content', 'thinking', 'thought', 'thoughts',
+  'id', 'model', 'object', 'role', 'type', 'name', 'index', 'usage',
+  'finish_reason', 'stop_reason', 'refusal', 'error', 'system_fingerprint',
+]);
+
+/**
+ * The longest sentence-shaped string anywhere in the reply.
+ *
+ * Only reached when none of the known shapes matched. Enumerating shapes is a
+ * losing game — the last extractor knew one shape and was silently wrong for
+ * every rewrite in production — so when the shape is unfamiliar, look for the
+ * answer rather than give up and blame the model.
+ */
+function deepestText(value, key = '', depth = 0) {
+  if (depth > 6 || value == null) return '';
+  if (typeof value === 'string') {
+    return (!NOT_THE_ANSWER.has(key) && value.trim().length >= 15) ? value.trim() : '';
+  }
+  if (typeof value !== 'object') return '';
+  const entries = Array.isArray(value)
+    ? value.map((item) => [key, item])
+    : Object.entries(value);
+  let best = '';
+  for (const [childKey, child] of entries) {
+    if (NOT_THE_ANSWER.has(childKey)) continue;
+    const found = deepestText(child, childKey, depth + 1);
+    if (found.length > best.length) best = found;
+  }
+  return best;
+}
+
+/** The text and how it was found — the probe reports `via` so an unfamiliar
+ *  shape can be promoted to a known one rather than relying on the fallback. */
+export function extractDetail(reply) {
+  const known = fromKnownShape(reply);
+  if (known) return { text: known, via: 'known' };
+  const deep = deepestText(reply);
+  return deep ? { text: deep, via: 'deep' } : { text: '', via: 'none' };
+}
+
 export function extractText(reply) {
+  return extractDetail(reply).text;
+}
+
+function fromKnownShape(reply) {
   if (reply == null) return '';
   if (typeof reply === 'string') return reply.trim();
   if (Array.isArray(reply)) {
-    return reply.map(extractText).filter(Boolean).join('\n').trim();
+    return reply.map(fromKnownShape).filter(Boolean).join('\n').trim();
   }
   if (typeof reply !== 'object') return String(reply).trim();
 
   // The plain text-generation shape, and the same thing nested one deep.
   for (const key of ['response', 'result', 'output_text', 'text', 'content']) {
-    const found = extractText(reply[key]);
+    const found = fromKnownShape(reply[key]);
     if (found) return found;
   }
   // OpenAI-compatible chat completions.
   if (Array.isArray(reply.choices)) {
-    const found = extractText(reply.choices.map((choice) => choice && (choice.message || choice)));
+    const found = fromKnownShape(reply.choices.map((choice) => choice && (choice.message || choice)));
     if (found) return found;
   }
   // Responses-API style: output[].content[].text. Reasoning items carry their
   // own type and no text, so they drop out of their own accord.
   if (Array.isArray(reply.output)) {
-    const found = extractText(reply.output.map((item) => item && item.content));
+    const found = fromKnownShape(reply.output.map((item) => item && item.content));
     if (found) return found;
   }
   return '';
@@ -203,7 +251,8 @@ export const today = () => new Date().toISOString().slice(0, 10);
 
 // Why the suggestions came back deterministic. "model_unavailable" covered
 // four different situations and so identified none of them.
-function degradedReason(useAi, env, failures) {
+function degradedReason(useAi, env, failures, identityKnown) {
+  if (!identityKnown) return 'identity_unknown';
   if (!env.AI) return 'no_ai_binding';
   if (!useAi) return 'daily_budget';
   if (failures.some((line) => /no usable line/.test(line))) return 'model_reply_unusable';
@@ -244,14 +293,23 @@ export async function rewriteBullets(request, env, user, scanId, body) {
     });
   }
 
+  // Identity comes from the request, not the database: it was never stored.
+  // The reader's browser holds it, and it is sent here only to be removed.
+  //
+  // Absent is NOT the same as "this CV has no name". A scan re-opened from
+  // history carries identity: null, and the client used to fall back to the
+  // last scan's identity or to {} — so the reader's name went to the model
+  // unredacted, or was redacted against a different CV's name. Rule 1 of
+  // SCORING-SPEC §6 is that the model never receives identity, so when the
+  // request cannot say what to strip, no model is called at all.
+  const identityKnown = !!(body && body.identity);
+  const identity = (body && body.identity) || {};
+
   const spent = await spentToday(env, day);
   const budgetLeft = DAILY_NEURON_BUDGET - spent;
   const affordable = Math.max(0, Math.floor(budgetLeft / NEURONS_PER_REWRITE));
-  const useAi = !!env.AI && affordable > 0;
+  const useAi = !!env.AI && affordable > 0 && identityKnown;
 
-  // Identity comes from the request, not the database: it was never stored.
-  // The reader's browser holds it, and it is sent here only to be removed.
-  const identity = (body && body.identity) || {};
 
   const suggestions = [];
   const failures = [];
@@ -302,9 +360,11 @@ export async function rewriteBullets(request, env, user, scanId, body) {
   return json({
     suggestions,
     degraded,
-    reason: degraded ? degradedReason(useAi, env, failures) : null,
+    reason: degraded ? degradedReason(useAi, env, failures, identityKnown) : null,
     note: degraded
-      ? 'AI suggestions are unavailable right now, so this is the deterministic guidance instead. Nothing else about your scan changes.'
+      ? (identityKnown
+        ? 'AI suggestions are unavailable right now, so this is the deterministic guidance instead. Nothing else about your scan changes.'
+        : 'This scan was opened from your history, and the details Atsy would remove before showing a bullet to a model are not kept. Rather than send your name to one, here is the same guidance the model works from.')
       : null,
     // Shown next to every suggestion, every time.
     label: 'Suggested rewrite — check it is true before you use it.',

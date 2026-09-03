@@ -17,8 +17,9 @@ checklist, and the incident log inherited from Pricey. Brand is "Atsy" — never
   Cloudflare's Oceania region; D1 serves it from Auckland.
 - R2 `atsy-cv-oc` (binding `CV`) holds **application-encrypted** CV bytes only,
   also in Oceania.
-- Workers AI (binding `AI`) for `toMarkdown` and for bullet rewrites —
-  **never** in the scoring path. Scoring is deterministic and node-testable.
+- Workers AI (binding `AI`) for bullet rewrites only — **never** in the scoring
+  path. Scoring is deterministic and node-testable. (`toMarkdown` is named in
+  `docs/` as a corroboration step; no code calls it. Do not repeat the claim.)
 - Email OTP via Cloudflare Email Service (`send_email` binding, sender
   `atsyhello@vibecod3.app`); Turnstile shields OTP requests and uploads.
 - PDF parsing with `unpdf` (serverless PDF.js) server-side; a self-hosted
@@ -40,6 +41,16 @@ checklist, and the incident log inherited from Pricey. Brand is "Atsy" — never
   test fails on any `d1`/`r2 bucket`/`migrations` command that writes a live name
   out by hand — the rename to Oceania left two such copies behind and killed a
   deploy at `Apply D1 migrations`.
+- **A feature's success path must be tested, not just its failure path.** Four
+  of the last five incidents were the same shape: the real path had no test —
+  Turnstile's key blanked, the widget never rendered, `env.AI` absent from
+  `testEnv()`, the model reply read in one shape only — so the product degraded
+  politely in production while every gate stayed green. Stub the dependency and
+  assert the good outcome. A suite that only proves graceful degradation proves
+  the feature is off.
+- **Never send a bullet to a model without knowing what to redact.** `identity`
+  absent is not the same as "this CV has no name": a scan re-opened from history
+  carries none, and guessing meant the reader's real name reached the model.
 - **Extracted CV text is never persisted** — only findings with ≤120-char
   evidence snippets.
 - **Every per-user query binds `user_id`**; every state change is a conditional

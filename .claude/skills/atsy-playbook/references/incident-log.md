@@ -667,3 +667,31 @@ Atsy's own incidents start at #36.
     it. Raised to 600, with `NEURONS_PER_REWRITE` raised from 12 to 40 to match
     — a reserve that no longer reflects the call it is reserving for lets the
     day's real spend run past the budget the guard exists to hold.
+
+83. **A rewrite on a re-opened scan sent the reader's real name to the model.**
+    The identity block is never stored, so a scan opened from history returns
+    `identity: null`. The page held one module-level `lastIdentity` and, when a
+    scan had none, kept the **previous** scan's — so a rewrite on scan B was
+    redacted against scan A's name, leaving B's name in the bullet that went to
+    the model; on a fresh page load it sent `{}` and stripped nothing. Rule 1 of
+    SCORING-SPEC §6 — "the model never receives identity" — was false for every
+    rewrite on a re-opened scan since the feature shipped. → Identity is keyed
+    to its scan id and never shared, and the Worker treats a missing identity as
+    "unknown" rather than "nothing to strip": no model is called at all, and the
+    reader is told why. Found by audit, not by a report. A single module-level
+    "last thing" variable is a cross-record leak waiting for a second record.
+
+84. **Four incidents, one shape.** 75 (Turnstile's key blanked), 76 (`env.AI`
+    absent from `testEnv`), 79 (a probe on the wrong credential) and 80 (one
+    reply shape) were all the same mistake: the path that could fail had no
+    test, and the product degrades politely, so every gate stayed green while
+    the feature was off. → CLAUDE.md now carries it as a non-negotiable: stub
+    the dependency and assert the good outcome. A suite that only proves
+    graceful degradation proves the feature is switched off.
+
+85. **Docs describing a stage that was never built.** `docs/ARCHITECTURE.md`
+    listed an `env.AI.toMarkdown()` corroboration pass in the pipeline, in the
+    table and in the numbered flow. No code calls it, and none ever did. The
+    owner reads that document to know what Atsy does. → Both places now say
+    "not built" rather than describing it as though it runs. Same standard as
+    the product: never state something Atsy does not actually do.
