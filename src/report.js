@@ -3,6 +3,15 @@
 // RELEASES[0].version === VERSION — bump both together, every release.
 export const RELEASES = [
   {
+    version: '1.2.6',
+    date: '2026-09-03',
+    notes: [
+      'Fixed a privacy fault: opening an older scan from your history and asking for a rewrite could send your name to the model, or strip a different CV\u2019s name instead of yours. Atsy now refuses to ask a model at all when it cannot say what to remove, and tells you why.',
+      'Rewrite suggestions no longer depend on the model replying in one exact format. If the wording is there, Atsy finds it \u2014 and it will never offer a model\u2019s private reasoning, or an internal id, as your bullet.',
+      'The architecture notes described a step that was specified and never built. They now say so rather than describing it as though it runs.',
+    ],
+  },
+  {
     version: '1.2.5',
     date: '2026-09-01',
     notes: [

@@ -17,7 +17,7 @@ Workers Paid plan (cost model in §7). Platform facts are cited in
 | File storage | R2 `atsy-cv-oc`, private bucket, app-encrypted objects | 10 GB-month free, zero egress, AES-256 at rest under our own ciphertext |
 | Storage region | Both created with `--location oc`; D1 serves from Auckland | Fixed at creation and unchangeable — a move means new resources and a copy |
 | PDF parsing | `unpdf` (serverless PDF.js build, tested on Workers) | Positional text items — the only way to detect columns, headers and reading order |
-| Semantic cross-check | `env.AI.toMarkdown()` | Free for PDFs; gives a tagged-structure view to corroborate section detection |
+| Semantic cross-check | **Not built.** Specified as `env.AI.toMarkdown()`; no code calls it | It was described here as though it ran. Section detection is `unpdf` positions alone |
 | Auth | Email OTP via Cloudflare Email Service (`send_email` binding) | Owner directive; 3,000 emails/month included; `vibecod3.app` already onboarded |
 | Bot shield | Turnstile on OTP request and upload | Same pattern as Pricey; new site key needed per domain |
 | Abuse control | Rate Limiting binding + D1 counters | Edge limiter for bursts, D1 for per-day quotas |
@@ -126,8 +126,9 @@ Rules baked into every query (each one is a Pricey incident, log entry #32):
 2  Sniff       first bytes must be %PDF-; reject encrypted/XFA/corrupt (P90)
 3  Encrypt     AES-256-GCM envelope in the Worker → PUT to R2 (ciphertext only)
 4  Extract     unpdf → pages[] of positioned text items, fonts, images, annotations
-5  Corroborate env.AI.toMarkdown() → tagged-structure view (free, best-effort,
-               skipped on error; never blocks a scan)
+5  (not built) A toMarkdown corroboration pass was specified here and never
+               written. Nothing in the scan path calls a model, which is why
+               the same PDF always scores the same.
 6  Model       layout.js → columns, reading order, bands, tables
                sections.js → canonical sections
                entities.js → name, contacts, roles, dates, skills

@@ -656,12 +656,14 @@
     }
     // Kept in the browser only, and sent back solely so the Worker can strip
     // it out of a bullet before any model sees it. It was never stored.
-    lastIdentity = scan.identity
-      ? {
-        name: scan.identity.name,
-        employers: scan.identity.employers || [],
-      }
-      : lastIdentity;
+    // Kept against THIS scan's id. The old line fell back to the previous
+    // scan's identity when a re-opened one had none, so a rewrite on scan B
+    // was redacted using scan A's name — leaving B's name in the bullet that
+    // went to the model. A scan with no identity now has none, and the Worker
+    // refuses to call a model rather than guess what to strip.
+    identityByScan[scan.id] = scan.identity
+      ? { name: scan.identity.name, employers: scan.identity.employers || [] }
+      : null;
 
     renderScore(result, scan);
     renderPillars(result);
@@ -854,7 +856,10 @@
 
   /* ---------- role fit ---------- */
 
-  var lastIdentity = null;
+  // Identity per scan id, never shared between scans. Browser-only: it is
+  // sent back solely so the Worker can strip it out before any model sees
+  // the bullet, and it was never stored anywhere.
+  var identityByScan = {};
 
   function renderFit(fit, note) {
     document.getElementById('fit-number').textContent = String(fit.score);
@@ -984,7 +989,9 @@
           bullets: bullets.slice(0, 3).map(function (text) {
             return { text: text, checkId: finding.id };
           }),
-          identity: lastIdentity || {},
+          // null, not {} — "we do not know" and "there is nothing to strip"
+          // call for opposite behaviour from the Worker.
+          identity: identityByScan[currentScanId] || null,
         }),
       });
       idle(button);

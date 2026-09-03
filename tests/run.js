@@ -26,7 +26,7 @@ import { buildMatcher } from '../src/skills.js';
 import { roleFit, totalTenureYears, seniorityOf } from '../src/scoring/role-fit.js';
 import {
   redact, templateRewrite, rewriteBullets, spentToday, today,
-  REWRITABLE, DAILY_NEURON_BUDGET, MODEL, FALLBACK_MODEL, firstUsableBullet, extractText,
+  REWRITABLE, DAILY_NEURON_BUDGET, MODEL, FALLBACK_MODEL, firstUsableBullet, extractText, extractDetail,
 } from '../src/rewrite.js';
 import { submitFeedback, adminStats, adminAiCheck, adminFeedback, resolveFeedback } from '../src/admin.js';
 import { scanReport } from '../src/report-page.js';
@@ -2049,10 +2049,63 @@ await test('a reply in an unfamiliar shape still produces a suggestion', async (
   const { scan } = await (await createScan(uploadRequest(fixture('noMetrics')), env, user)).json();
   const body = await (await rewriteBullets(new Request('https://atsy.test/'), env, user, scan.id, {
     bullets: [{ text: 'Responsible for the depot network', checkId: 'D03' }],
+    // Known, and nothing to strip: this exercises the model path rather
+    // than the identity guard.
+    identity: { name: null, employers: [] },
   })).json();
   assert.equal(body.degraded, false, `still degraded: ${body.reason}`);
   assert.equal(body.suggestions[0].source, 'ai');
   assert.match(body.suggestions[0].suggestion, /^Ran the depot network/);
+});
+
+await test('an unfamiliar reply shape is still read, and reasoning is not mistaken for it', () => {
+  // Enumerating shapes is a losing game — the previous extractor knew exactly
+  // one and was silently wrong for every rewrite in production. When the shape
+  // is unfamiliar, the answer is looked for rather than given up on.
+  const odd = { data: { items: [{ payload: 'Ran the depot network across 12 sites, cutting turnaround by 4 days.' }] } };
+  assert.match(extractText(odd), /^Ran the depot network/);
+  assert.equal(extractDetail(odd).via, 'deep');
+  assert.equal(extractDetail({ response: 'Led it well and truly.' }).via, 'known');
+
+  // A reasoning field is prose of exactly the right length to be mistaken for
+  // a bullet. It must never win, even when it is the only string there.
+  assert.equal(extractText({ reasoning: 'I should start with a verb and add a number here.' }), '');
+  assert.equal(extractText({ choices: [{ reasoning_content: 'Thinking about the depot bullet now.' }] }), '');
+  // Nor may an id or a model name be offered as a rewrite.
+  assert.equal(extractText({ id: 'chatcmpl-000000000000000000', model: '@cf/google/gemma-4-26b-a4b-it' }), '');
+  // Still nothing when there is genuinely nothing.
+  assert.equal(extractText({ usage: { tokens: 3 } }), '');
+});
+
+await test('a scan with no identity is never sent to a model', async () => {
+  // SCORING-SPEC §6 rule 1: the model never receives identity. A scan re-opened
+  // from history carries identity: null, and the client used to substitute the
+  // previous scan's — so the reader's name reached the model unredacted, or was
+  // redacted against a different CV's name.
+  const ai = fakeAi('Ran the depot network across 12 sites.');
+  const env = testEnv({ AI: ai.AI });
+  const user = testUser(env);
+  const { scan } = await (await createScan(uploadRequest(fixture('noMetrics')), env, user)).json();
+
+  const body = await (await rewriteBullets(new Request('https://atsy.test/'), env, user, scan.id, {
+    bullets: [{ text: 'Responsible for the depot network', checkId: 'D03' }],
+    identity: null,
+  })).json();
+
+  assert.equal(ai.calls.length, 0, 'a model was called without knowing what to redact');
+  assert.equal(body.degraded, true);
+  assert.equal(body.reason, 'identity_unknown');
+  assert.equal(body.suggestions[0].source, 'template');
+  assert.match(body.note, /not kept/);
+
+  // "This CV has no name" is a different thing from "we do not know", and must
+  // still get a real suggestion.
+  const known = await (await rewriteBullets(new Request('https://atsy.test/'), env, user, scan.id, {
+    bullets: [{ text: 'Responsible for the depot network', checkId: 'D03' }],
+    identity: { name: null, employers: [] },
+  })).json();
+  assert.equal(known.degraded, false, `degraded: ${known.reason}`);
+  assert.equal(ai.calls.length, 1);
 });
 
 await test('the AI probe is admin-only, and reports the binding verbatim', async () => {
@@ -2087,6 +2140,7 @@ await test('the AI probe says ok when the binding answers', async () => {
   const body = await (await adminAiCheck(new Request('https://atsy.test/'), env, admin)).json();
   assert.equal(body.ok, true);
   assert.equal(body.models[0].extracted, 'ready');
+  assert.equal(body.models[0].via, 'known');
   // The raw reply and its keys travel too. An extracted empty string is what
   // sent me looking in the wrong place; without the shape beside it there is
   // no way to tell an unreadable answer from an absent one.
@@ -2138,6 +2192,9 @@ await test('a model that answers with nothing usable falls back, and says so', a
 
   const body = await (await rewriteBullets(new Request('https://atsy.test/'), env, user, scan.id, {
     bullets: [{ text: 'Responsible for the depot network', checkId: 'D03' }],
+    // Known, and nothing to strip: this exercises the model path rather
+    // than the identity guard.
+    identity: { name: null, employers: [] },
   })).json();
 
   assert.equal(body.degraded, true);
@@ -2154,6 +2211,9 @@ await test('a model that throws is reported as an error, not as an empty reply',
 
   const body = await (await rewriteBullets(new Request('https://atsy.test/'), env, user, scan.id, {
     bullets: [{ text: 'Responsible for the depot network', checkId: 'D03' }],
+    // Known, and nothing to strip: this exercises the model path rather
+    // than the identity guard.
+    identity: { name: null, employers: [] },
   })).json();
 
   assert.equal(body.degraded, true);
@@ -2166,6 +2226,9 @@ await test('no AI binding is reported as exactly that', async () => {
   const { scan } = await (await createScan(uploadRequest(fixture('noMetrics')), env, user)).json();
   const body = await (await rewriteBullets(new Request('https://atsy.test/'), env, user, scan.id, {
     bullets: [{ text: 'Responsible for the depot network', checkId: 'D03' }],
+    // Known, and nothing to strip: this exercises the model path rather
+    // than the identity guard.
+    identity: { name: null, employers: [] },
   })).json();
   assert.equal(body.reason, 'no_ai_binding');
 });
@@ -2201,6 +2264,9 @@ await test('the daily neuron budget is spent, not guessed at', async () => {
   const request = new Request('https://atsy.test/');
   const first = await (await rewriteBullets(request, env, user, scan.id, {
     bullets: [{ text: 'Responsible for the depot network', checkId: 'D03' }],
+    // Known, and nothing to strip: this exercises the model path rather
+    // than the identity guard.
+    identity: { name: null, employers: [] },
   })).json();
   assert.equal(first.degraded, false);
   assert.equal(first.suggestions[0].source, 'ai');
@@ -2213,6 +2279,9 @@ await test('the daily neuron budget is spent, not guessed at', async () => {
   env.DB.prepare('UPDATE ai_usage SET neurons = ? WHERE day = ?').bind(DAILY_NEURON_BUDGET, day).run();
   const after = await (await rewriteBullets(request, env, user, scan.id, {
     bullets: [{ text: 'Responsible for the depot network', checkId: 'D03' }],
+    // Known, and nothing to strip: this exercises the model path rather
+    // than the identity guard.
+    identity: { name: null, employers: [] },
   })).json();
   assert.equal(after.degraded, true);
   assert.equal(after.reason, 'daily_budget');
