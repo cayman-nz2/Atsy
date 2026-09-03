@@ -3,6 +3,16 @@
 // RELEASES[0].version === VERSION — bump both together, every release.
 export const RELEASES = [
   {
+    version: '1.2.5',
+    date: '2026-09-01',
+    notes: [
+      'AI rewrite suggestions work again. The models were never down \u2014 they were answering in about a second, and Atsy could not read the answer.',
+      'Atsy looked for the reply in one place. Both models put it somewhere else, so every suggestion fell back to the deterministic guidance while the models themselves were fine.',
+      'Suggestions are also given room to finish. Both models think before they answer, and the old limit could be used up before a single word of the actual suggestion was written.',
+      'Your score is unaffected, as always: suggestions have never fed scoring.',
+    ],
+  },
+  {
     version: '1.2.4',
     date: '2026-09-01',
     notes: [

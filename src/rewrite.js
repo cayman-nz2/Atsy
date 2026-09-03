@@ -27,7 +27,10 @@ export const FALLBACK_MODEL = '@cf/qwen/qwen3-30b-a3b-fp8';
 export const DAILY_NEURON_BUDGET = 8000;
 // A rough cost per rewrite, used to reserve budget before the call. Being
 // approximate is fine; being unbounded is not.
-const NEURONS_PER_REWRITE = 12;
+// Raised with max_tokens above: reserving the old figure against a call that
+// can now be five times longer would let the day's real spend run past the
+// budget the guard exists to hold.
+const NEURONS_PER_REWRITE = 40;
 export const MAX_BULLETS_PER_REQUEST = 10;
 export const PER_USER_DAILY_REWRITES = 40;
 
@@ -99,6 +102,43 @@ const PROMPT = [
   '- Placeholders like [name], [employer], [link] must be left exactly as they are.',
 ].join('\n');
 
+/**
+ * The text out of a Workers AI reply, whatever shape it arrives in.
+ *
+ * This used to be `(reply.response || reply.result || '').toString()`. Both of
+ * the configured models answer in about a second and neither fills either of
+ * those, so every rewrite in production fell back to the deterministic template
+ * while the models themselves were working perfectly. An extractor that knows
+ * exactly one shape fails silently the moment a model uses another, and the
+ * failure looks identical to the model being down.
+ */
+export function extractText(reply) {
+  if (reply == null) return '';
+  if (typeof reply === 'string') return reply.trim();
+  if (Array.isArray(reply)) {
+    return reply.map(extractText).filter(Boolean).join('\n').trim();
+  }
+  if (typeof reply !== 'object') return String(reply).trim();
+
+  // The plain text-generation shape, and the same thing nested one deep.
+  for (const key of ['response', 'result', 'output_text', 'text', 'content']) {
+    const found = extractText(reply[key]);
+    if (found) return found;
+  }
+  // OpenAI-compatible chat completions.
+  if (Array.isArray(reply.choices)) {
+    const found = extractText(reply.choices.map((choice) => choice && (choice.message || choice)));
+    if (found) return found;
+  }
+  // Responses-API style: output[].content[].text. Reasoning items carry their
+  // own type and no text, so they drop out of their own accord.
+  if (Array.isArray(reply.output)) {
+    const found = extractText(reply.output.map((item) => item && item.content));
+    if (found) return found;
+  }
+  return '';
+}
+
 /** Ask the model for one rewrite. Returns null on any failure. */
 async function askModel(env, redacted, checkId, model) {
   const response = await env.AI.run(model, {
@@ -109,9 +149,13 @@ async function askModel(env, redacted, checkId, model) {
     // Deterministic settings, so the same bullet gives a stable suggestion and
     // the cost stays predictable.
     temperature: 0.2,
-    max_tokens: 120,
+    // Both models reason before they answer, and the reasoning counts against
+    // this. At 120 the whole allowance could go on thinking and the reply come
+    // back with no bullet in it at all. The <think> block is stripped below, so
+    // the extra tokens cost a little and buy an answer instead of nothing.
+    max_tokens: 600,
   });
-  const text = (response && (response.response || response.result || '')).toString().trim();
+  const text = extractText(response);
   if (!text) return null;
   return firstUsableBullet(text);
 }

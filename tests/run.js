@@ -26,7 +26,7 @@ import { buildMatcher } from '../src/skills.js';
 import { roleFit, totalTenureYears, seniorityOf } from '../src/scoring/role-fit.js';
 import {
   redact, templateRewrite, rewriteBullets, spentToday, today,
-  REWRITABLE, DAILY_NEURON_BUDGET, MODEL, FALLBACK_MODEL, firstUsableBullet,
+  REWRITABLE, DAILY_NEURON_BUDGET, MODEL, FALLBACK_MODEL, firstUsableBullet, extractText,
 } from '../src/rewrite.js';
 import { submitFeedback, adminStats, adminAiCheck, adminFeedback, resolveFeedback } from '../src/admin.js';
 import { scanReport } from '../src/report-page.js';
@@ -2011,6 +2011,50 @@ function fakeAi(reply) {
   };
 }
 
+await test('the reply text is found whatever shape the model answers in', () => {
+  // The live cause. Both models answered in about a second and the old
+  // extractor — reply.response || reply.result — read nothing out of either,
+  // so every rewrite in production fell back while the models were fine.
+  assert.equal(extractText({ response: 'Led the depot rollout.' }), 'Led the depot rollout.');
+  assert.equal(extractText({ result: { response: 'Led it.' } }), 'Led it.');
+  assert.equal(extractText({ choices: [{ message: { content: 'Led it.' } }] }), 'Led it.');
+  assert.equal(extractText({ choices: [{ text: 'Led it.' }] }), 'Led it.');
+  assert.equal(
+    extractText({ output: [{ content: [{ type: 'output_text', text: 'Led it.' }] }] }),
+    'Led it.',
+  );
+  assert.equal(extractText('Led it.'), 'Led it.');
+
+  // A reasoning item carries no text and must not be mistaken for the answer.
+  assert.equal(
+    extractText({ output: [{ type: 'reasoning' }, { content: [{ text: 'Led it.' }] }] }),
+    'Led it.',
+  );
+
+  // Nothing usable stays nothing usable — an extractor that invents a string
+  // would turn "the model said nothing" into a bullet.
+  for (const empty of [null, undefined, {}, { response: '' }, { choices: [] }, { output: [] }]) {
+    assert.equal(extractText(empty), '', `expected nothing from ${JSON.stringify(empty)}`);
+  }
+});
+
+await test('a reply in an unfamiliar shape still produces a suggestion', async () => {
+  // End to end, not just the extractor: the shape the old code could not read
+  // must now reach the reader as an AI suggestion rather than the template.
+  const ai = fakeAi(() => ({
+    choices: [{ message: { content: 'Ran the depot network across 12 sites, cutting turnaround by 4 days.' } }],
+  }));
+  const env = testEnv({ AI: ai.AI });
+  const user = testUser(env);
+  const { scan } = await (await createScan(uploadRequest(fixture('noMetrics')), env, user)).json();
+  const body = await (await rewriteBullets(new Request('https://atsy.test/'), env, user, scan.id, {
+    bullets: [{ text: 'Responsible for the depot network', checkId: 'D03' }],
+  })).json();
+  assert.equal(body.degraded, false, `still degraded: ${body.reason}`);
+  assert.equal(body.suggestions[0].source, 'ai');
+  assert.match(body.suggestions[0].suggestion, /^Ran the depot network/);
+});
+
 await test('the AI probe is admin-only, and reports the binding verbatim', async () => {
   // It spends neurons and it exists to expose an error message, so an ordinary
   // reader must not be able to reach it — 404, the same as every other admin
@@ -2026,12 +2070,15 @@ await test('the AI probe is admin-only, and reports the binding verbatim', async
   const admin = testUser(env, 'boss@example.com');
   const body = await (await adminAiCheck(new Request('https://atsy.test/'), env, admin)).json();
   assert.equal(body.ok, false);
-  assert.equal(body.models.length, 2, 'both models must be reported, not just the first');
+  // Both models, at both token caps: a small one and a realistic one, which is
+  // what tells "the shape is unreadable" apart from "the allowance went on
+  // reasoning before anything was emitted".
+  assert.equal(body.models.length, 4, 'both models at both caps must be reported');
+  assert.deepEqual([...new Set(body.models.map((m) => m.model))], [MODEL, FALLBACK_MODEL]);
+  assert.deepEqual([...new Set(body.models.map((m) => m.maxTokens))], [16, 600]);
   // The whole message survives: "not enabled" and "model not found" need
   // different fixes and must not both arrive as "unavailable".
   assert.match(body.models[0].error, /not enabled on this account/);
-  assert.equal(body.models[0].model, MODEL);
-  assert.equal(body.models[1].model, FALLBACK_MODEL);
 });
 
 await test('the AI probe says ok when the binding answers', async () => {
@@ -2039,7 +2086,27 @@ await test('the AI probe says ok when the binding answers', async () => {
   const admin = testUser(env, 'boss@example.com');
   const body = await (await adminAiCheck(new Request('https://atsy.test/'), env, admin)).json();
   assert.equal(body.ok, true);
-  assert.equal(body.models[0].reply, 'ready');
+  assert.equal(body.models[0].extracted, 'ready');
+  // The raw reply and its keys travel too. An extracted empty string is what
+  // sent me looking in the wrong place; without the shape beside it there is
+  // no way to tell an unreadable answer from an absent one.
+  assert.deepEqual(body.models[0].keys, ['response']);
+  assert.match(body.models[0].raw, /"ready"/);
+});
+
+await test('the probe reports ok:false when a model answers unreadably', () => {
+  // ok must mean "a rewrite would work", not "the call returned". The first
+  // live run said ok:true with an empty reply from both models, and that read
+  // as healthy when the feature was completely broken.
+  const env = testEnv({ AI: { run: async () => ({ meta: { tokens: 3 } }) }, ADMIN_EMAILS: 'boss@example.com' });
+  const admin = testUser(env, 'boss@example.com');
+  return adminAiCheck(new Request('https://atsy.test/'), env, admin)
+    .then((response) => response.json())
+    .then((body) => {
+      assert.equal(body.ok, false, 'an unreadable answer must not report ok');
+      assert.equal(body.models[0].extracted, '');
+      assert.deepEqual(body.models[0].keys, ['meta']);
+    });
 });
 
 await test('a model that answers produces a labelled AI suggestion', async () => {
