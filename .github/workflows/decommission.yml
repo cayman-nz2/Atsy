@@ -1,0 +1,27 @@
+# Permanently destroy Atsy: the Worker (and with it atsy.vibecod3.app and the
+# cron), both D1 databases, both R2 buckets and their contents, and the
+# Turnstile widget. Every account and every stored CV is deleted. There is no
+# undo. Requires the literal word DESTROY.
+name: Decommission Atsy
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type DESTROY to delete the Worker, databases and buckets permanently'
+        required: true
+
+jobs:
+  destroy:
+    if: inputs.confirm == 'DESTROY'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node tools/decommission.mjs
