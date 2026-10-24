@@ -1,3 +1,9 @@
+> **Atsy was shut down on 24 October 2026.** The Worker, the custom domain
+> `atsy.vibecod3.app`, both D1 databases, both R2 buckets and the Turnstile
+> widget were deleted permanently on the owner's instruction. Every account
+> and every stored CV is gone. The deploy and provisioning workflows were
+> removed so a merge cannot recreate it; the code is kept as a record.
+
 # Atsy
 
 **A free CV scanner that shows you what a hiring machine sees.**
